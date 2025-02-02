@@ -1,0 +1,340 @@
+{
+  "testCases": [
+    {
+      "description": "Required: Only cifs; No narrowing filters; includeArchival: true",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "includeArchival": true
+      },
+      "expectedCount": 1,
+      "expectedIds": [1]
+    },
+    {
+      "description": "Required: Only cifs; No narrowing filters; includeArchival: false",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "includeArchival": false
+      },
+      "expectedCount": 1,
+      "expectedIds": [1]
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Only stages provided; includeArchival: true",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "stages": ["LAUNCHED"],
+        "includeArchival": true
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Only stages provided; includeArchival: false",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "stages": ["LAUNCHED"],
+        "includeArchival": false
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Only types provided; includeArchival: true",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "types": ["WORKING_CAPITAL_LOAN"],
+        "includeArchival": true
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Only types provided; includeArchival: false",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "types": ["WORKING_CAPITAL_LOAN"],
+        "includeArchival": false
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Both stages and types provided; includeArchival: true",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "stages": ["LAUNCHED"],
+        "types": ["WORKING_CAPITAL_LOAN"],
+        "includeArchival": true
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    },
+    {
+      "description": "Required: Only cifs; Narrowing: Both stages and types provided; includeArchival: false",
+      "data": [
+        {
+          "productId": 1,
+          "type": "FINANCING_INVESTMENT_LOAN",
+          "cif": "CIF1",
+          "pricingOrderId": 100,
+          "launchOrderId": null,
+          "stage": "WAITING_FOR_LAUNCH",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":1,\"type\":\"FINANCING_INVESTMENT_LOAN\",\"stage\":\"NEW\"}"
+        },
+        {
+          "productId": 2,
+          "type": "WORKING_CAPITAL_LOAN",
+          "cif": "CIF2",
+          "pricingOrderId": 100,
+          "launchOrderId": 100,
+          "stage": "LAUNCHED",
+          "archivedOn": null,
+          "baseProductDataJson": "{\"id\":2,\"type\":\"WORKING_CAPITAL_LOAN\",\"stage\":\"LAUNCHED\"}"
+        },
+        {
+          "productId": 3,
+          "type": "GUARANTEE_LIMIT",
+          "cif": "CIF3",
+          "pricingOrderId": 100,
+          "launchOrderId": 200,
+          "stage": "ARCHIVED",
+          "archivedOn": "2025-01-01T10:00:00",
+          "baseProductDataJson": "{\"id\":3,\"type\":\"GUARANTEE_LIMIT\",\"stage\":\"ARCHIVED\"}"
+        }
+      ],
+      "query": {
+        "cifs": ["CIF1"],
+        "stages": ["LAUNCHED"],
+        "types": ["WORKING_CAPITAL_LOAN"],
+        "includeArchival": false
+      },
+      "expectedCount": 0,
+      "expectedIds": []
+    }
+  ]
+}
