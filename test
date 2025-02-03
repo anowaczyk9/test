@@ -1,0 +1,95 @@
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import javax.sql.DataSource;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.springframework.cloud.stream.binding.BindingsLifecycleController;
+import org.springframework.test.util.ReflectionTestUtils;
+
+class DatabaseHealthCheckerTest {
+
+    @Mock
+    private DataSource dataSource;
+
+    @Mock
+    private BindingsLifecycleController bindingsLifecycleController;
+
+    @Mock
+    private Connection connection;
+
+    @Mock
+    private Statement statement;
+
+    // The class under test
+    private DatabaseHealthChecker databaseHealthChecker;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        // Initialize DatabaseHealthChecker with mocked dependencies.
+        databaseHealthChecker = new DatabaseHealthChecker(bindingsLifecycleController, dataSource);
+        // Set the binding name (normally injected via @Value)
+        ReflectionTestUtils.setField(databaseHealthChecker, "productChangedEventBindingName", "testBinding");
+    }
+
+    @Test
+    void testCheckDatabaseHealthWhenDatabaseIsHealthy_NoStateChange() throws Exception {
+        // Arrange: simulate a healthy database connection.
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        // Optionally, you can stub statement.execute() if needed:
+        // when(statement.execute("SELECT 1")).thenReturn(true);
+
+        // Act: call the health check method.
+        // By default, the initial state is healthy, so no transition should be detected.
+        databaseHealthChecker.checkDatabaseHealth();
+
+        // Assert: the health flag should remain healthy.
+        assertTrue(databaseHealthChecker.isDatabaseHealthy());
+        // And no start/stop calls should be made since there was no state change.
+        verify(bindingsLifecycleController, never()).start(anyString());
+        verify(bindingsLifecycleController, never()).stop(anyString());
+    }
+
+    @Test
+    void testCheckDatabaseHealthTransitionFromUnhealthyToHealthy() throws Exception {
+        // Arrange: force the internal state to be unhealthy.
+        ReflectionTestUtils.setField(databaseHealthChecker, "isDatabaseHealthy", false);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+
+        // Act: perform the health check, which should detect a healthy database.
+        databaseHealthChecker.checkDatabaseHealth();
+
+        // Assert: the internal flag should now be true.
+        assertTrue(databaseHealthChecker.isDatabaseHealthy());
+        // And the controller should be instructed to start message consumption.
+        verify(bindingsLifecycleController).start("testBinding");
+        verify(bindingsLifecycleController, never()).stop(anyString());
+    }
+
+    @Test
+    void testCheckDatabaseHealthTransitionFromHealthyToUnhealthy() throws Exception {
+        // Arrange: ensure the internal state starts as healthy.
+        ReflectionTestUtils.setField(databaseHealthChecker, "isDatabaseHealthy", true);
+        // Simulate a failure when trying to get a connection.
+        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
+
+        // Act: perform the health check.
+        databaseHealthChecker.checkDatabaseHealth();
+
+        // Assert: the internal flag should now be false.
+        assertFalse(databaseHealthChecker.isDatabaseHealthy());
+        // And the controller should be instructed to stop message consumption.
+        verify(bindingsLifecycleController).stop("testBinding");
+        verify(bindingsLifecycleController, never()).start(anyString());
+    }
+}
