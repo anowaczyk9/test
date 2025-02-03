@@ -1,132 +1,159 @@
 package com.example.integration;
 
-import com.example.events.ProductChangedEvent;
-import com.example.events.ProductChangedEventMessageHeader;
-import com.example.repositories.ProductEventRepository;
-import com.example.services.ProductReadModelServicePort;
-import com.example.services.ProductStatusService;
-import com.rabbitmq.client.Channel;
+import com.example.client.ProductClient;
+import com.example.dto.BaseProductDataDto;
+import com.example.entities.ProductReadModelEntity;
+import com.example.exceptions.ProductSynchronizationException;
+import com.example.repositories.ProductReadModelRepository;
+import com.example.services.ProductReadModelService;
+import com.example.services.ProductStatusServicePort;
+import feign.FeignException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import org.springframework.amqp.support.AmqpHeaders;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageHeaders;
-import org.springframework.messaging.support.GenericMessage;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.util.Map;
-import java.util.function.Consumer;
+import java.util.List;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
-public class ProductChangedEventConsumerIntegrationTest {
+@Import(ProductReadModelServiceIntegrationTest.TestConfig.class)
+public class ProductReadModelServiceIntegrationTest {
 
-    // Inject the consumer bean defined in your configuration.
-    @Autowired
-    private Consumer<Message<ProductChangedEvent>> productChangedEventConsumer;
+    // Inject the service under test.
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
+    @javax.annotation.Resource
+    private ProductReadModelService productReadModelService;
 
-    // Replace collaborating beans so we can verify interactions.
-    @MockBean
-    private ProductReadModelServicePort productReadModelServicePort;
+    // Inject the collaborator mocks so we can control and verify behavior.
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
+    @javax.annotation.Resource
+    private ProductClient productClient;
 
-    @MockBean
-    private ProductEventRepository productEventRepository;
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
+    @javax.annotation.Resource
+    private ProductReadModelRepository productReadModelRepository;
 
-    @MockBean
-    private ProductStatusService productStatusService;
+    @SuppressWarnings("SpringJavaInjectionPointsAutowiringInspection")
+    @javax.annotation.Resource
+    private ProductStatusServicePort productStatusServicePort;
 
-    /**
-     * Test the successful processing flow:
-     * - The event is processed and saved.
-     * - The AMQP channel receives a basicAck.
-     */
-    @Test
-    public void testSuccessfulProcessing() throws Exception {
-        // Arrange
+    @TestConfiguration
+    static class TestConfig {
+        @Bean
+        public ProductClient productClient() {
+            return Mockito.mock(ProductClient.class);
+        }
 
-        // Create a dummy ProductChangedEvent. (Populate any required fields.)
-        ProductChangedEvent event = new ProductChangedEvent();
-        
-        // Create a dummy event header (as expected by your listener).
-        ProductChangedEventMessageHeader eventHeader = new ProductChangedEventMessageHeader();
-        
-        // Create a mock Channel to simulate AMQP channel behavior.
-        Channel channel = mock(Channel.class);
+        @Bean
+        public ProductReadModelRepository productReadModelRepository() {
+            return Mockito.mock(ProductReadModelRepository.class);
+        }
 
-        // Build message headers with the necessary entries:
-        // - "eventDetails" header is used by suspendProductUpdates.
-        // - AmqpHeaders.CHANNEL and AmqpHeaders.DELIVERY_TAG are used for acknowledgment.
-        MessageHeaders headers = new MessageHeaders(Map.of(
-                "eventDetails", eventHeader,
-                AmqpHeaders.CHANNEL, channel,
-                AmqpHeaders.DELIVERY_TAG, 1L
-        ));
-
-        // Create the message with the payload and headers.
-        Message<ProductChangedEvent> message = new GenericMessage<>(event, headers);
-
-        // Act: Execute the consumer with the message.
-        productChangedEventConsumer.accept(message);
-
-        // Assert:
-        // Verify that the read model service processed the event.
-        verify(productReadModelServicePort, times(1)).process(any());
-        // Verify that the event was saved.
-        verify(productEventRepository, times(1)).saveEvent(eq(event));
-        // Verify that basicAck was called with the delivery tag 1 and multiple=false.
-        verify(channel, times(1)).basicAck(1L, false);
+        @Bean
+        public ProductStatusServicePort productStatusServicePort() {
+            return Mockito.mock(ProductStatusServicePort.class);
+        }
+        // Note: ProductReadModelService is already declared as a @Service in your main code,
+        // so it will be picked up by component scanning.
     }
 
     /**
-     * Test the error processing flow:
-     * - The processing throws an exception.
-     * - suspendProductUpdates is called.
-     * - The AMQP channel receives a basicNack.
+     * Test the successful synchronization when productClient returns a non-empty list.
      */
     @Test
-    public void testErrorProcessing() throws Exception {
-        // Arrange
+    public void testSynchronizeProductsWithNonEmptyData() {
+        // Arrange: prepare a set of customer IDs.
+        Set<Long> customerIds = Set.of(100L, 200L);
 
-        // Create a dummy ProductChangedEvent.
-        ProductChangedEvent event = new ProductChangedEvent();
-        
-        // Create a dummy event header.
-        ProductChangedEventMessageHeader eventHeader = new ProductChangedEventMessageHeader();
-        
-        // Simulate an exception when processing the event.
-        doThrow(new RuntimeException("Processing failed"))
-                .when(productReadModelServicePort).process(any());
+        // Prepare some sample products with variety in data.
+        BaseProductDataDto product1 = new BaseProductDataDto();
+        product1.setId(1L);
+        // (Set other properties as needed)
 
-        // Create a mock Channel.
-        Channel channel = mock(Channel.class);
+        BaseProductDataDto product2 = new BaseProductDataDto();
+        product2.setId(2L);
+        // (Set additional properties if needed)
 
-        // Build message headers with required entries.
-        MessageHeaders headers = new MessageHeaders(Map.of(
-                "eventDetails", eventHeader,
-                AmqpHeaders.CHANNEL, channel,
-                AmqpHeaders.DELIVERY_TAG, 2L
-        ));
+        // Optionally add a third product with different data.
+        BaseProductDataDto product3 = new BaseProductDataDto();
+        product3.setId(3L);
+        // (Set more fields as appropriate)
 
-        // Create the message.
-        Message<ProductChangedEvent> message = new GenericMessage<>(event, headers);
+        List<BaseProductDataDto> productList = List.of(product1, product2, product3);
 
-        // Act: Execute the consumer.
-        // (The exception is handled internally so this call should not propagate.)
-        productChangedEventConsumer.accept(message);
+        // When productClient is called, return our list.
+        when(productClient.findAllByCustomerIds(customerIds)).thenReturn(productList);
 
-        // Assert:
-        // Verify that suspendProductUpdates was called with the correct event header.
-        verify(productStatusService, times(1)).suspendProductUpdates(eq(eventHeader));
-        // Verify that the event was NOT saved since processing failed.
-        verify(productEventRepository, never()).saveEvent(any());
-        // Verify that basicNack was called with the delivery tag 2, multiple=false, and requeue=false.
-        verify(channel, times(1)).basicNack(2L, false, false);
+        // Act: call synchronizeProducts.
+        productReadModelService.synchronizeProducts(customerIds);
+
+        // Assert: Verify that the repository's saveAll is called with the converted list.
+        ArgumentCaptor<List<ProductReadModelEntity>> captor =
+                ArgumentCaptor.forClass(List.class);
+        verify(productReadModelRepository, times(1)).saveAll(captor.capture());
+        List<ProductReadModelEntity> savedEntities = captor.getValue();
+        assertEquals(productList.size(), savedEntities.size(),
+            "The number of saved entities should match the number of returned products.");
+
+        // Verify that resumeProductUpdates is called with the correct list of product IDs.
+        verify(productStatusServicePort, times(1))
+                .resumeProductUpdates(argThat(ids ->
+                        ids.containsAll(List.of(1L, 2L, 3L)) && ids.size() == 3));
+    }
+
+    /**
+     * Test the successful synchronization when productClient returns an empty list.
+     */
+    @Test
+    public void testSynchronizeProductsWithEmptyData() {
+        // Arrange: a set of customer IDs.
+        Set<Long> customerIds = Set.of(300L);
+        // productClient returns an empty list.
+        when(productClient.findAllByCustomerIds(customerIds)).thenReturn(List.of());
+
+        // Act:
+        productReadModelService.synchronizeProducts(customerIds);
+
+        // Assert: Verify that saveAll is called with an empty list.
+        verify(productReadModelRepository, times(1))
+                .saveAll(argThat(list -> list.isEmpty()));
+        // And that resumeProductUpdates is also called with an empty list.
+        verify(productStatusServicePort, times(1))
+                .resumeProductUpdates(argThat(list -> list.isEmpty()));
+    }
+
+    /**
+     * Test that if productClient throws a FeignException, the service throws a ProductSynchronizationException.
+     */
+    @Test
+    public void testSynchronizeProductsFeignException() {
+        // Arrange: a set of customer IDs.
+        Set<Long> customerIds = Set.of(400L);
+
+        // Simulate a FeignException.
+        FeignException feignException = mock(FeignException.class);
+        when(productClient.findAllByCustomerIds(customerIds)).thenThrow(feignException);
+
+        // Act & Assert: the service should throw a ProductSynchronizationException.
+        ProductSynchronizationException exception = assertThrows(
+                ProductSynchronizationException.class,
+                () -> productReadModelService.synchronizeProducts(customerIds)
+        );
+        assertTrue(exception.getMessage().contains("Failed to synchronize products"));
+
+        // Verify that neither saveAll nor resumeProductUpdates is called.
+        verify(productReadModelRepository, never()).saveAll(any());
+        verify(productStatusServicePort, never()).resumeProductUpdates(any());
     }
 }
