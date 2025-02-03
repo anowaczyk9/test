@@ -1,0 +1,17 @@
+ @Test
+    public void testDatabaseHealthUnhealthyAfterShutdown() throws Exception {
+        // First, get a connection and execute the SHUTDOWN command.
+        try (Connection conn = dataSource.getConnection();
+             Statement stmt = conn.createStatement()) {
+            // The SHUTDOWN command will close the database.
+            stmt.execute("SHUTDOWN");
+        } catch (SQLException e) {
+            // H2 may throw an exception on shutdown. This is expected.
+        }
+
+        // Now, run the health check.
+        databaseHealthChecker.checkDatabaseHealth();
+
+        // Assert that the health check now marks the database as unhealthy.
+        assertFalse(databaseHealthChecker.isDatabaseHealthy());
+    }
