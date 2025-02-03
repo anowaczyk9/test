@@ -1,95 +1,132 @@
-import static org.junit.jupiter.api.Assertions.*;
+package com.example.integration;
+
+import com.example.events.ProductChangedEvent;
+import com.example.events.ProductChangedEventMessageHeader;
+import com.example.repositories.ProductEventRepository;
+import com.example.services.ProductReadModelServicePort;
+import com.example.services.ProductStatusService;
+import com.rabbitmq.client.Channel;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.amqp.support.AmqpHeaders;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHeaders;
+import org.springframework.messaging.support.GenericMessage;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.Map;
+import java.util.function.Consumer;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
+@SpringBootTest
+@ActiveProfiles("test")
+public class ProductChangedEventConsumerIntegrationTest {
 
-import javax.sql.DataSource;
+    // Inject the consumer bean defined in your configuration.
+    @Autowired
+    private Consumer<Message<ProductChangedEvent>> productChangedEventConsumer;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.cloud.stream.binding.BindingsLifecycleController;
-import org.springframework.test.util.ReflectionTestUtils;
+    // Replace collaborating beans so we can verify interactions.
+    @MockBean
+    private ProductReadModelServicePort productReadModelServicePort;
 
-class DatabaseHealthCheckerTest {
+    @MockBean
+    private ProductEventRepository productEventRepository;
 
-    @Mock
-    private DataSource dataSource;
+    @MockBean
+    private ProductStatusService productStatusService;
 
-    @Mock
-    private BindingsLifecycleController bindingsLifecycleController;
+    /**
+     * Test the successful processing flow:
+     * - The event is processed and saved.
+     * - The AMQP channel receives a basicAck.
+     */
+    @Test
+    public void testSuccessfulProcessing() throws Exception {
+        // Arrange
 
-    @Mock
-    private Connection connection;
+        // Create a dummy ProductChangedEvent. (Populate any required fields.)
+        ProductChangedEvent event = new ProductChangedEvent();
+        
+        // Create a dummy event header (as expected by your listener).
+        ProductChangedEventMessageHeader eventHeader = new ProductChangedEventMessageHeader();
+        
+        // Create a mock Channel to simulate AMQP channel behavior.
+        Channel channel = mock(Channel.class);
 
-    @Mock
-    private Statement statement;
+        // Build message headers with the necessary entries:
+        // - "eventDetails" header is used by suspendProductUpdates.
+        // - AmqpHeaders.CHANNEL and AmqpHeaders.DELIVERY_TAG are used for acknowledgment.
+        MessageHeaders headers = new MessageHeaders(Map.of(
+                "eventDetails", eventHeader,
+                AmqpHeaders.CHANNEL, channel,
+                AmqpHeaders.DELIVERY_TAG, 1L
+        ));
 
-    // The class under test
-    private DatabaseHealthChecker databaseHealthChecker;
+        // Create the message with the payload and headers.
+        Message<ProductChangedEvent> message = new GenericMessage<>(event, headers);
 
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        // Initialize DatabaseHealthChecker with mocked dependencies.
-        databaseHealthChecker = new DatabaseHealthChecker(bindingsLifecycleController, dataSource);
-        // Set the binding name (normally injected via @Value)
-        ReflectionTestUtils.setField(databaseHealthChecker, "productChangedEventBindingName", "testBinding");
+        // Act: Execute the consumer with the message.
+        productChangedEventConsumer.accept(message);
+
+        // Assert:
+        // Verify that the read model service processed the event.
+        verify(productReadModelServicePort, times(1)).process(any());
+        // Verify that the event was saved.
+        verify(productEventRepository, times(1)).saveEvent(eq(event));
+        // Verify that basicAck was called with the delivery tag 1 and multiple=false.
+        verify(channel, times(1)).basicAck(1L, false);
     }
 
+    /**
+     * Test the error processing flow:
+     * - The processing throws an exception.
+     * - suspendProductUpdates is called.
+     * - The AMQP channel receives a basicNack.
+     */
     @Test
-    void testCheckDatabaseHealthWhenDatabaseIsHealthy_NoStateChange() throws Exception {
-        // Arrange: simulate a healthy database connection.
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.createStatement()).thenReturn(statement);
-        // Optionally, you can stub statement.execute() if needed:
-        // when(statement.execute("SELECT 1")).thenReturn(true);
+    public void testErrorProcessing() throws Exception {
+        // Arrange
 
-        // Act: call the health check method.
-        // By default, the initial state is healthy, so no transition should be detected.
-        databaseHealthChecker.checkDatabaseHealth();
+        // Create a dummy ProductChangedEvent.
+        ProductChangedEvent event = new ProductChangedEvent();
+        
+        // Create a dummy event header.
+        ProductChangedEventMessageHeader eventHeader = new ProductChangedEventMessageHeader();
+        
+        // Simulate an exception when processing the event.
+        doThrow(new RuntimeException("Processing failed"))
+                .when(productReadModelServicePort).process(any());
 
-        // Assert: the health flag should remain healthy.
-        assertTrue(databaseHealthChecker.isDatabaseHealthy());
-        // And no start/stop calls should be made since there was no state change.
-        verify(bindingsLifecycleController, never()).start(anyString());
-        verify(bindingsLifecycleController, never()).stop(anyString());
-    }
+        // Create a mock Channel.
+        Channel channel = mock(Channel.class);
 
-    @Test
-    void testCheckDatabaseHealthTransitionFromUnhealthyToHealthy() throws Exception {
-        // Arrange: force the internal state to be unhealthy.
-        ReflectionTestUtils.setField(databaseHealthChecker, "isDatabaseHealthy", false);
-        when(dataSource.getConnection()).thenReturn(connection);
-        when(connection.createStatement()).thenReturn(statement);
+        // Build message headers with required entries.
+        MessageHeaders headers = new MessageHeaders(Map.of(
+                "eventDetails", eventHeader,
+                AmqpHeaders.CHANNEL, channel,
+                AmqpHeaders.DELIVERY_TAG, 2L
+        ));
 
-        // Act: perform the health check, which should detect a healthy database.
-        databaseHealthChecker.checkDatabaseHealth();
+        // Create the message.
+        Message<ProductChangedEvent> message = new GenericMessage<>(event, headers);
 
-        // Assert: the internal flag should now be true.
-        assertTrue(databaseHealthChecker.isDatabaseHealthy());
-        // And the controller should be instructed to start message consumption.
-        verify(bindingsLifecycleController).start("testBinding");
-        verify(bindingsLifecycleController, never()).stop(anyString());
-    }
+        // Act: Execute the consumer.
+        // (The exception is handled internally so this call should not propagate.)
+        productChangedEventConsumer.accept(message);
 
-    @Test
-    void testCheckDatabaseHealthTransitionFromHealthyToUnhealthy() throws Exception {
-        // Arrange: ensure the internal state starts as healthy.
-        ReflectionTestUtils.setField(databaseHealthChecker, "isDatabaseHealthy", true);
-        // Simulate a failure when trying to get a connection.
-        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
-
-        // Act: perform the health check.
-        databaseHealthChecker.checkDatabaseHealth();
-
-        // Assert: the internal flag should now be false.
-        assertFalse(databaseHealthChecker.isDatabaseHealthy());
-        // And the controller should be instructed to stop message consumption.
-        verify(bindingsLifecycleController).stop("testBinding");
-        verify(bindingsLifecycleController, never()).start(anyString());
+        // Assert:
+        // Verify that suspendProductUpdates was called with the correct event header.
+        verify(productStatusService, times(1)).suspendProductUpdates(eq(eventHeader));
+        // Verify that the event was NOT saved since processing failed.
+        verify(productEventRepository, never()).saveEvent(any());
+        // Verify that basicNack was called with the delivery tag 2, multiple=false, and requeue=false.
+        verify(channel, times(1)).basicNack(2L, false, false);
     }
 }
