@@ -1,3 +1,5 @@
+package com.example.health;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
@@ -34,78 +36,51 @@ class DatabaseHealthCheckerTest {
     @InjectMocks
     private DatabaseHealthChecker databaseHealthChecker;
 
-    // Ensure our binding name is set for the tests.
     @BeforeEach
     void setup() {
+        // Manually set the binding name since it would normally be injected via @Value
         ReflectionTestUtils.setField(databaseHealthChecker, "productChangedEventBindingName", "test-binding");
     }
 
-    /**
-     * Test that when the database is healthy, no change in health state occurs and no lifecycle
-     * method is called.
-     */
     @Test
     void testHealthyRemainsHealthy() throws Exception {
-        // Arrange: simulate a healthy database connection.
+        // Arrange: Simulate a healthy database connection.
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.createStatement()).thenReturn(statement);
-        // The SELECT statement executes without error.
+        // The query executes successfully.
         doNothing().when(statement).execute("SELECT 1");
 
-        // Act: call the scheduled method.
+        // Act: Call the health check.
         databaseHealthChecker.checkDatabaseHealth();
 
-        // Assert: since the initial state is healthy and remains healthy,
-        // neither start() nor stop() should be called.
+        // Assert: Since the database remains healthy, no start() or stop() calls should be made.
         verify(bindingsLifecycleController, never()).start(anyString());
         verify(bindingsLifecycleController, never()).stop(anyString());
         assertTrue(databaseHealthChecker.isDatabaseHealthy());
     }
 
-    /**
-     * Test that when the database transitions from healthy to unhealthy the
-     * stop method is called.
-     */
-    @Test
-    void testHealthyToUnhealthyTransition() throws Exception {
-        // Arrange: simulate a failure in obtaining a connection (or executing the query).
-        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
-
-        // Act: call the scheduled method.
-        databaseHealthChecker.checkDatabaseHealth();
-
-        // Assert: since the initial state was healthy and now it's unhealthy,
-        // we expect the stop method to be called.
-        verify(bindingsLifecycleController, times(1)).stop("test-binding");
-        verify(bindingsLifecycleController, never()).start(anyString());
-        assertFalse(databaseHealthChecker.isDatabaseHealthy());
-    }
-
-    /**
-     * Test that when the database transitions from unhealthy to healthy the
-     * start method is called.
-     */
     @Test
     void testUnhealthyToHealthyTransition() throws Exception {
-        // First, force an unhealthy state.
-        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
-        databaseHealthChecker.checkDatabaseHealth();
-        assertFalse(databaseHealthChecker.isDatabaseHealthy());
-
-        // Reset mocks before simulating a healthy scenario.
-        reset(dataSource, connection, statement, bindingsLifecycleController);
-
-        // Arrange: simulate a healthy database connection.
-        when(dataSource.getConnection()).thenReturn(connection);
+        // Arrange: Set up sequential behavior for dataSource.getConnection()
+        // First call: simulate failure by throwing SQLException.
+        // Second call: return a valid connection.
+        when(dataSource.getConnection())
+                .thenThrow(new SQLException("Simulated failure"))
+                .thenReturn(connection);
         when(connection.createStatement()).thenReturn(statement);
+        // For the healthy case, simulate a successful query execution.
         doNothing().when(statement).execute("SELECT 1");
 
-        // Act: call the scheduled method.
+        // Act: First call to health check should simulate a failure.
         databaseHealthChecker.checkDatabaseHealth();
+        // Assert: Database should be unhealthy, so stop() should be called.
+        assertFalse(databaseHealthChecker.isDatabaseHealthy());
+        verify(bindingsLifecycleController, times(1)).stop("test-binding");
 
-        // Assert: since the state changed from unhealthy to healthy, we expect the start method to be called.
-        verify(bindingsLifecycleController, times(1)).start("test-binding");
-        verify(bindingsLifecycleController, never()).stop(anyString());
+        // Act: Second call to health check should simulate recovery.
+        databaseHealthChecker.checkDatabaseHealth();
+        // Assert: Database should now be healthy, so start() should be called.
         assertTrue(databaseHealthChecker.isDatabaseHealthy());
+        verify(bindingsLifecycleController, times(1)).start("test-binding");
     }
 }
