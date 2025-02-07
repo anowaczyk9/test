@@ -1,148 +1,111 @@
-package com.example.integration;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
 
-import com.example.client.ProductClient;
-import com.example.dto.BaseProductDataDto;
-import com.example.entities.ProductReadModelEntity;
-import com.example.entities.ProductStatusEntity;
-import com.example.exceptions.ProductSynchronizationException;
-import com.example.repositories.ProductReadModelRepository;
-import com.example.repositories.ProductStatusRepository;
-import com.example.services.ProductReadModelService;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import javax.sql.DataSource;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.test.context.ActiveProfiles;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Set;
+@ExtendWith(MockitoExtension.class)
+class DatabaseHealthCheckerTest {
 
-import static org.junit.jupiter.api.Assertions.*;
+    @Mock
+    private BindingsLifecycleController bindingsLifecycleController;
 
-@SpringBootTest
-@ActiveProfiles("test") // Assumes an H2 (or similar) in-memory DB is configured for the "test" profile.
-public class SynchronizeProductsFullIntegrationTest {
+    @Mock
+    private DataSource dataSource;
 
-    @Autowired
-    private ProductReadModelService productReadModelService;
+    @Mock
+    private Connection connection;
 
-    @Autowired
-    private ProductReadModelRepository productReadModelRepository;
+    @Mock
+    private Statement statement;
 
-    @Autowired
-    private ProductStatusRepository productStatusRepository;
+    @InjectMocks
+    private DatabaseHealthChecker databaseHealthChecker;
 
-    /**
-     * Stub the external ProductClient so that our test does not rely on external systems.
-     * Here we simulate two cases:
-     * - If customerIds contains 300L, we return an empty list.
-     * - Otherwise, we return a list of three products.
-     */
-    @TestConfiguration
-    static class TestProductClientConfig {
-
-        @Bean
-        @Primary
-        public ProductClient productClient() {
-            return new ProductClient() {
-                @Override
-                public List<BaseProductDataDto> findAllByCustomerIds(Set<Long> customerIds) {
-                    if (customerIds.contains(300L)) {
-                        return Collections.emptyList();
-                    }
-                    // Create three sample products
-                    BaseProductDataDto product1 = new BaseProductDataDto();
-                    product1.setId(1L);
-                    BaseProductDataDto product2 = new BaseProductDataDto();
-                    product2.setId(2L);
-                    BaseProductDataDto product3 = new BaseProductDataDto();
-                    product3.setId(3L);
-                    return Arrays.asList(product1, product2, product3);
-                }
-            };
-        }
-    }
-
+    // Ensure our binding name is set for the tests.
     @BeforeEach
-    public void setUp() {
-        // Clean the database before each test
-        productReadModelRepository.deleteAll();
-        productStatusRepository.deleteAll();
+    void setup() {
+        ReflectionTestUtils.setField(databaseHealthChecker, "productChangedEventBindingName", "test-binding");
     }
 
     /**
-     * Test the full integration flow when non-empty product data is returned.
+     * Test that when the database is healthy, no change in health state occurs and no lifecycle
+     * method is called.
      */
     @Test
-    public void testSynchronizeProductsWithNonEmptyData() {
-        Set<Long> customerIds = Set.of(100L, 200L);
+    void testHealthyRemainsHealthy() throws Exception {
+        // Arrange: simulate a healthy database connection.
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        // The SELECT statement executes without error.
+        doNothing().when(statement).execute("SELECT 1");
 
-        // Call the synchronization method.
-        productReadModelService.synchronizeProducts(customerIds);
+        // Act: call the scheduled method.
+        databaseHealthChecker.checkDatabaseHealth();
 
-        // Verify that the read model repository now contains 3 entities.
-        List<ProductReadModelEntity> savedProducts = productReadModelRepository.findAll();
-        assertEquals(3, savedProducts.size(), "Should have 3 saved product read model entities");
-
-        // Verify that the status updates have been applied.
-        // For example, if resumeProductUpdates sets the status to SYNCHRONIZED,
-        // then we can verify that in the product status repository.
-        List<ProductStatusEntity> statuses = productStatusRepository.findAll();
-        // (The exact expected number depends on your implementation.
-        // In our sample implementation, resumeProductUpdates iterates over each product
-        // and creates a new status record. Adjust the assertion as needed.)
-        assertFalse(statuses.isEmpty(), "Product statuses should be updated");
-        statuses.forEach(status ->
-                assertEquals(ProductStatusEntity.Status.SYNCHRONIZED, status.getStatus(),
-                        "All product statuses should be marked as SYNCHRONIZED")
-        );
+        // Assert: since the initial state is healthy and remains healthy,
+        // neither start() nor stop() should be called.
+        verify(bindingsLifecycleController, never()).start(anyString());
+        verify(bindingsLifecycleController, never()).stop(anyString());
+        assertTrue(databaseHealthChecker.isDatabaseHealthy());
     }
 
     /**
-     * Test the full integration flow when the external client returns empty data.
+     * Test that when the database transitions from healthy to unhealthy the
+     * stop method is called.
      */
     @Test
-    public void testSynchronizeProductsWithEmptyData() {
-        Set<Long> customerIds = Set.of(300L);
+    void testHealthyToUnhealthyTransition() throws Exception {
+        // Arrange: simulate a failure in obtaining a connection (or executing the query).
+        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
 
-        // Call the synchronization method.
-        productReadModelService.synchronizeProducts(customerIds);
+        // Act: call the scheduled method.
+        databaseHealthChecker.checkDatabaseHealth();
 
-        // Verify that no product read model entities were saved.
-        List<ProductReadModelEntity> savedProducts = productReadModelRepository.findAll();
-        assertTrue(savedProducts.isEmpty(), "No product read model entities should be saved for empty data");
-
-        // Verify that resumeProductUpdates is not called and no product statuses are created.
-        List<ProductStatusEntity> statuses = productStatusRepository.findAll();
-        assertTrue(statuses.isEmpty(), "No product status updates should occur when no data is returned");
+        // Assert: since the initial state was healthy and now it's unhealthy,
+        // we expect the stop method to be called.
+        verify(bindingsLifecycleController, times(1)).stop("test-binding");
+        verify(bindingsLifecycleController, never()).start(anyString());
+        assertFalse(databaseHealthChecker.isDatabaseHealthy());
     }
 
     /**
-     * Test that if the ProductClient throws an exception, the synchronization method
-     * throws a ProductSynchronizationException.
+     * Test that when the database transitions from unhealthy to healthy the
+     * start method is called.
      */
     @Test
-    public void testSynchronizeProductsFeignException() {
-        // For this test, we simulate a failure in the external client.
-        // One approach is to temporarily override the ProductClient bean to throw an exception.
-        // Alternatively, you might have a dedicated test profile or a separate test configuration.
-        // For simplicity, assume we simulate the condition by providing a new set of customer IDs
-        // that our stub is programmed to handle as an error. (You might need to adjust your stub accordingly.)
-        Set<Long> customerIds = Set.of(500L);
+    void testUnhealthyToHealthyTransition() throws Exception {
+        // First, force an unhealthy state.
+        when(dataSource.getConnection()).thenThrow(new SQLException("Simulated failure"));
+        databaseHealthChecker.checkDatabaseHealth();
+        assertFalse(databaseHealthChecker.isDatabaseHealthy());
 
-        // Here we simulate an exception by having the ProductClient stub throw a runtime exception.
-        // To do that, you could modify your TestProductClientConfig to check for customerId 500L.
-        // For demonstration, we assume that behavior is implemented.
-        ProductSynchronizationException exception = assertThrows(
-                ProductSynchronizationException.class,
-                () -> productReadModelService.synchronizeProducts(customerIds),
-                "Should throw ProductSynchronizationException when client fails"
-        );
-        assertTrue(exception.getMessage().contains("Failed to synchronize products"));
+        // Reset mocks before simulating a healthy scenario.
+        reset(dataSource, connection, statement, bindingsLifecycleController);
+
+        // Arrange: simulate a healthy database connection.
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.createStatement()).thenReturn(statement);
+        doNothing().when(statement).execute("SELECT 1");
+
+        // Act: call the scheduled method.
+        databaseHealthChecker.checkDatabaseHealth();
+
+        // Assert: since the state changed from unhealthy to healthy, we expect the start method to be called.
+        verify(bindingsLifecycleController, times(1)).start("test-binding");
+        verify(bindingsLifecycleController, never()).stop(anyString());
+        assertTrue(databaseHealthChecker.isDatabaseHealthy());
     }
 }
