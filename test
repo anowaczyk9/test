@@ -38,7 +38,7 @@ class DatabaseHealthCheckerTest {
 
     @BeforeEach
     void setup() {
-        // Manually set the binding name since it would normally be injected via @Value
+        // Set the binding name since it is normally injected via @Value.
         ReflectionTestUtils.setField(databaseHealthChecker, "productChangedEventBindingName", "test-binding");
     }
 
@@ -47,10 +47,10 @@ class DatabaseHealthCheckerTest {
         // Arrange: Simulate a healthy database connection.
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.createStatement()).thenReturn(statement);
-        // The query executes successfully.
-        doNothing().when(statement).execute("SELECT 1");
+        // Stub the execute method to return a boolean indicating success.
+        when(statement.execute("SELECT 1")).thenReturn(true);
 
-        // Act: Call the health check.
+        // Act: Perform the health check.
         databaseHealthChecker.checkDatabaseHealth();
 
         // Assert: Since the database remains healthy, no start() or stop() calls should be made.
@@ -61,23 +61,22 @@ class DatabaseHealthCheckerTest {
 
     @Test
     void testUnhealthyToHealthyTransition() throws Exception {
-        // Arrange: Set up sequential behavior for dataSource.getConnection()
-        // First call: simulate failure by throwing SQLException.
-        // Second call: return a valid connection.
+        // Arrange: Sequential stubbing for dataSource.getConnection():
+        // First call: simulate failure; second call: simulate healthy connection.
         when(dataSource.getConnection())
                 .thenThrow(new SQLException("Simulated failure"))
                 .thenReturn(connection);
         when(connection.createStatement()).thenReturn(statement);
-        // For the healthy case, simulate a successful query execution.
-        doNothing().when(statement).execute("SELECT 1");
+        // For the healthy case, stub the execute method to indicate success.
+        when(statement.execute("SELECT 1")).thenReturn(true);
 
-        // Act: First call to health check should simulate a failure.
+        // Act: First call to health check simulates failure.
         databaseHealthChecker.checkDatabaseHealth();
         // Assert: Database should be unhealthy, so stop() should be called.
         assertFalse(databaseHealthChecker.isDatabaseHealthy());
         verify(bindingsLifecycleController, times(1)).stop("test-binding");
 
-        // Act: Second call to health check should simulate recovery.
+        // Act: Second call to health check simulates recovery.
         databaseHealthChecker.checkDatabaseHealth();
         // Assert: Database should now be healthy, so start() should be called.
         assertTrue(databaseHealthChecker.isDatabaseHealthy());
