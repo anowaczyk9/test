@@ -1,1 +1,6 @@
-keytool -importcert -trustcacerts -file mycert.crt -alias myCertAlias -keystore "$JAVA_HOME/jre/lib/security/cacerts" -storepass changeit
+@Query("SELECT r FROM ProductsRelation r " +
+       "WHERE r.archival = false " +
+       "AND (r.sourceId IN :productIds OR r.targetId IN :productIds) " +
+       "AND (:relationType IS NULL OR r.relationType = :relationType)")
+Set<ProductsRelation> findRelations(@Param("productIds") Set<Long> productIds,
+                                      @Param("relationType") ProductsRelationType relationType);
