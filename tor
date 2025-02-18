@@ -1,8 +1,116 @@
-private Predicate<ProductsRelation> isProductInvolved(Long productId) {
-    return relation -> productId.equals(relation.getSourceId()) || productId.equals(relation.getTargetId());
-}
+@ExtendWith(MockitoExtension.class)
+public class ProductRelationsServiceTest {
 
-private Predicate<ProductsRelation> hasRelationType(ProductsRelationType relationType) {
-    // If relationType is null, return all relations; otherwise, match the specified type.
-    return relation -> relationType == null || relationType.equals(relation.getRelationType());
+    @Mock
+    private ProductsRelationRepository productsRelationRepository;
+
+    @InjectMocks
+    private ProductRelationsService productRelationsService;
+
+    private ProductRelationQuery query;
+
+    @BeforeEach
+    void setUp() {
+        // Initialize common query values if needed
+        query = new ProductRelationQuery();
+    }
+
+    @Test
+    void testGetProductsRelations_withoutRelationTypeFilter() {
+        // Given a query with product IDs and no relation type filter (null)
+        Set<Long> productIds = Set.of(1L, 2L);
+        query.setProductIds(productIds);
+        query.setRelationType(null);
+
+        // Create sample relations:
+        // Relation that involves product 1 and 2
+        ProductsRelation relation1 = ProductsRelation.builder()
+            .id(1L)
+            .sourceId(1L)
+            .targetId(2L)
+            .relationType(ProductsRelationType.SOME_TYPE)
+            .archival(false)
+            .build();
+        // Relation that involves product 1 only
+        ProductsRelation relation2 = ProductsRelation.builder()
+            .id(2L)
+            .sourceId(1L)
+            .targetId(3L) // product 3 is not in our query
+            .relationType(ProductsRelationType.OTHER_TYPE)
+            .archival(false)
+            .build();
+        Set<ProductsRelation> relationSet = Set.of(relation1, relation2);
+
+        when(productsRelationRepository.findAllByProductIdAndArchivalFalse(productIds))
+            .thenReturn(relationSet);
+
+        // When
+        Set<ProductRelationsSnapshot> snapshots = productRelationsService.getProductsRelations(query);
+
+        // Then
+        // Verify that product 1 has both relations (relation1 and relation2)
+        Optional<ProductRelationsSnapshot> snapshot1Opt = snapshots.stream()
+            .filter(s -> s.getProductId().equals(1L))
+            .findFirst();
+        assertTrue(snapshot1Opt.isPresent());
+        ProductRelationsSnapshot snapshot1 = snapshot1Opt.get();
+        assertEquals(2, snapshot1.getRelations().size());
+
+        // Verify that product 2 only has relation1 (where it's the target)
+        Optional<ProductRelationsSnapshot> snapshot2Opt = snapshots.stream()
+            .filter(s -> s.getProductId().equals(2L))
+            .findFirst();
+        assertTrue(snapshot2Opt.isPresent());
+        ProductRelationsSnapshot snapshot2 = snapshot2Opt.get();
+        assertEquals(1, snapshot2.getRelations().size());
+    }
+
+    @Test
+    void testGetProductsRelations_withRelationTypeFilter() {
+        // Given a query with product IDs and a specific relation type filter.
+        Set<Long> productIds = Set.of(1L, 2L);
+        query.setProductIds(productIds);
+        query.setRelationType(ProductsRelationType.SOME_TYPE);
+
+        // Create sample relations:
+        // Relation that matches the filter and involves both product 1 and 2.
+        ProductsRelation relation1 = ProductsRelation.builder()
+            .id(1L)
+            .sourceId(1L)
+            .targetId(2L)
+            .relationType(ProductsRelationType.SOME_TYPE)
+            .archival(false)
+            .build();
+        // Relation that does NOT match the filter
+        ProductsRelation relation2 = ProductsRelation.builder()
+            .id(2L)
+            .sourceId(1L)
+            .targetId(3L)
+            .relationType(ProductsRelationType.OTHER_TYPE)
+            .archival(false)
+            .build();
+        Set<ProductsRelation> relationSet = Set.of(relation1, relation2);
+
+        when(productsRelationRepository.findAllByProductIdAndArchivalFalse(productIds))
+            .thenReturn(relationSet);
+
+        // When
+        Set<ProductRelationsSnapshot> snapshots = productRelationsService.getProductsRelations(query);
+
+        // Then
+        // Only relation1 should be present because relation2 is filtered out.
+        Optional<ProductRelationsSnapshot> snapshot1Opt = snapshots.stream()
+            .filter(s -> s.getProductId().equals(1L))
+            .findFirst();
+        assertTrue(snapshot1Opt.isPresent());
+        ProductRelationsSnapshot snapshot1 = snapshot1Opt.get();
+        assertEquals(1, snapshot1.getRelations().size());
+
+        Optional<ProductRelationsSnapshot> snapshot2Opt = snapshots.stream()
+            .filter(s -> s.getProductId().equals(2L))
+            .findFirst();
+        assertTrue(snapshot2Opt.isPresent());
+        ProductRelationsSnapshot snapshot2 = snapshot2Opt.get();
+        assertEquals(1, snapshot2.getRelations().size());
+    }
 }
