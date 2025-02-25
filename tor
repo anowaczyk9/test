@@ -1,41 +1,35 @@
-@Value
-class ProductRelationsUpdatedCommand implements ProductRelationsCommand {
-    private final Long updatedProductId;
-    private final Set<ProductRelationsForm> relations;
-    
-    public static ProductRelationsUpdatedCommandBuilder builder() {
-        return new ProductRelationsUpdatedCommandBuilder();
-    }
-    
-    public static class ProductRelationsUpdatedCommandBuilder {
-        private Long updatedProductId;
-        private Set<ProductRelationsForm> relations = new HashSet<>();
+@Test
+    void shouldBuildCommandWithDtos() {
+        // given
+        Long productId = 123L;
+        Set<ProductRelationDto> dtos = new HashSet<>();
+        dtos.add(new ProductRelationDto(456L, "SIMILAR"));
+        dtos.add(new ProductRelationDto(789L, "ACCESSORY"));
         
-        public ProductRelationsUpdatedCommandBuilder updatedProductId(Long updatedProductId) {
-            this.updatedProductId = updatedProductId;
-            return this;
-        }
+        // when
+        ProductRelationsUpdatedCommand command = ProductRelationsUpdatedCommand.builder()
+                .updatedProductId(productId)
+                .withRelations(dtos)
+                .build();
         
-        public ProductRelationsUpdatedCommandBuilder relations(Set<ProductRelationsForm> relations) {
-            this.relations = relations;
-            return this;
-        }
+        // then
+        assertEquals(productId, command.getUpdatedProductId());
+        assertEquals(2, command.getRelations().size());
         
-        public ProductRelationsUpdatedCommandBuilder withRelations(Set<ProductRelationDto> relationDtos) {
-            if (relationDtos != null && !relationDtos.isEmpty()) {
-                relationDtos.forEach(dto -> {
-                    ProductRelationsForm form = ProductRelationsForm.builder()
-                            .sourceId(dto.getSourceId())
-                            .relationType(dto.getRelationType())
-                            .build();
-                    this.relations.add(form);
-                });
+        // Verify all relations are present
+        boolean found456 = false;
+        boolean found789 = false;
+        
+        for (ProductRelationsForm form : command.getRelations()) {
+            if (form.getSourceId().equals(456L)) {
+                found456 = true;
+                assertEquals("SIMILAR", form.getRelationType());
+            } else if (form.getSourceId().equals(789L)) {
+                found789 = true;
+                assertEquals("ACCESSORY", form.getRelationType());
             }
-            return this;
         }
         
-        public ProductRelationsUpdatedCommand build() {
-            return new ProductRelationsUpdatedCommand(updatedProductId, relations);
-        }
+        assertTrue(found456, "Relation with sourceId 456 not found");
+        assertTrue(found789, "Relation with sourceId 789 not found");
     }
-}
