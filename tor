@@ -1,42 +1,38 @@
 @Value
-@Builder(builderClassName = "ProductRelationsCreatedCommandBuilder")
-class ProductRelationsCreatedCommand implements ProductRelationsCommand {
-    Long createdProductId;
+@Builder(builderClassName = "ProductRelationsUpdatedCommandBuilder")
+class ProductRelationsUpdatedCommand implements ProductRelationsCommand {
+    Long updatedProductId;
     Set<ProductRelationsForm> relations;
     
     /**
      * Custom builder that adds withRelations method
      */
-    public static class ProductRelationsCreatedCommandBuilder {
-        // Collection to temporarily store relations from withRelations calls
-        private Set<ProductRelationsForm> tempRelations = new HashSet<>();
+    public static class ProductRelationsUpdatedCommandBuilder {
+        // This field will collect relations during build
+        private Set<ProductRelationsForm> relations = new HashSet<>();
         
         /**
          * Builder method for adding relations from DTOs
          * @param relationDtos Set of relation DTOs to add
          * @return this builder instance for method chaining
          */
-        public ProductRelationsCreatedCommandBuilder withRelations(Set<ProductRelationDto> relationDtos) {
+        public ProductRelationsUpdatedCommandBuilder withRelations(Set<ProductRelationDto> relationDtos) {
             if (relationDtos != null && !relationDtos.isEmpty()) {
-                // Map each DTO to a form and add to tempRelations
+                // Initialize relations collection if needed
+                if (this.relations == null) {
+                    this.relations = new HashSet<>();
+                }
+                
+                // Map each DTO to a form and add to relations
                 relationDtos.forEach(dto -> {
                     ProductRelationsForm form = ProductRelationsForm.builder()
                         .sourceId(dto.getSourceId())
                         .relationType(dto.getRelationType())
                         .build();
-                    this.tempRelations.add(form);
+                    this.relations.add(form);
                 });
             }
             return this;
-        }
-        
-        /**
-         * Override the build method to incorporate the collected relations
-         */
-        public ProductRelationsCreatedCommand build() {
-            // Set the accumulated relations before building
-            relations(tempRelations);
-            return new ProductRelationsCreatedCommand(createdProductId, relations);
         }
     }
 }
