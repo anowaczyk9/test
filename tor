@@ -1,19 +1,42 @@
-ProductRelationsUpdatedCommand withRelations(Set<ProductRelationDto> relationDtos) {
-        if (relationDtos != null && !relationDtos.isEmpty()) {
-            Set<ProductRelationsForm> formRelations = relationDtos.stream()
-                .map(dto -> ProductRelationsForm.builder()
-                    .sourceId(dto.getSourceId())
-                    .targetId(this.updatedProductId)
-                    .relationType(dto.getRelationType())
-                    .build())
-                .collect(java.util.stream.Collectors.toSet());
-            
-            if (this.relations == null) {
-                this.relations = new java.util.HashSet<>();
+@Value
+@Builder(builderClassName = "ProductRelationsCreatedCommandBuilder")
+class ProductRelationsCreatedCommand implements ProductRelationsCommand {
+    Long createdProductId;
+    Set<ProductRelationsForm> relations;
+    
+    /**
+     * Custom builder that adds withRelations method
+     */
+    public static class ProductRelationsCreatedCommandBuilder {
+        // Collection to temporarily store relations from withRelations calls
+        private Set<ProductRelationsForm> tempRelations = new HashSet<>();
+        
+        /**
+         * Builder method for adding relations from DTOs
+         * @param relationDtos Set of relation DTOs to add
+         * @return this builder instance for method chaining
+         */
+        public ProductRelationsCreatedCommandBuilder withRelations(Set<ProductRelationDto> relationDtos) {
+            if (relationDtos != null && !relationDtos.isEmpty()) {
+                // Map each DTO to a form and add to tempRelations
+                relationDtos.forEach(dto -> {
+                    ProductRelationsForm form = ProductRelationsForm.builder()
+                        .sourceId(dto.getSourceId())
+                        .relationType(dto.getRelationType())
+                        .build();
+                    this.tempRelations.add(form);
+                });
             }
-            
-            this.relations.addAll(formRelations);
+            return this;
         }
         
-        return this;
+        /**
+         * Override the build method to incorporate the collected relations
+         */
+        public ProductRelationsCreatedCommand build() {
+            // Set the accumulated relations before building
+            relations(tempRelations);
+            return new ProductRelationsCreatedCommand(createdProductId, relations);
+        }
     }
+}
