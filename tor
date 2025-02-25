@@ -1,38 +1,41 @@
 @Value
-@Builder(builderClassName = "ProductRelationsUpdatedCommandBuilder")
 class ProductRelationsUpdatedCommand implements ProductRelationsCommand {
-    Long updatedProductId;
-    Set<ProductRelationsForm> relations;
+    private final Long updatedProductId;
+    private final Set<ProductRelationsForm> relations;
     
-    /**
-     * Custom builder that adds withRelations method
-     */
+    public static ProductRelationsUpdatedCommandBuilder builder() {
+        return new ProductRelationsUpdatedCommandBuilder();
+    }
+    
     public static class ProductRelationsUpdatedCommandBuilder {
-        // This field will collect relations during build
+        private Long updatedProductId;
         private Set<ProductRelationsForm> relations = new HashSet<>();
         
-        /**
-         * Builder method for adding relations from DTOs
-         * @param relationDtos Set of relation DTOs to add
-         * @return this builder instance for method chaining
-         */
+        public ProductRelationsUpdatedCommandBuilder updatedProductId(Long updatedProductId) {
+            this.updatedProductId = updatedProductId;
+            return this;
+        }
+        
+        public ProductRelationsUpdatedCommandBuilder relations(Set<ProductRelationsForm> relations) {
+            this.relations = relations;
+            return this;
+        }
+        
         public ProductRelationsUpdatedCommandBuilder withRelations(Set<ProductRelationDto> relationDtos) {
             if (relationDtos != null && !relationDtos.isEmpty()) {
-                // Initialize relations collection if needed
-                if (this.relations == null) {
-                    this.relations = new HashSet<>();
-                }
-                
-                // Map each DTO to a form and add to relations
                 relationDtos.forEach(dto -> {
                     ProductRelationsForm form = ProductRelationsForm.builder()
-                        .sourceId(dto.getSourceId())
-                        .relationType(dto.getRelationType())
-                        .build();
+                            .sourceId(dto.getSourceId())
+                            .relationType(dto.getRelationType())
+                            .build();
                     this.relations.add(form);
                 });
             }
             return this;
+        }
+        
+        public ProductRelationsUpdatedCommand build() {
+            return new ProductRelationsUpdatedCommand(updatedProductId, relations);
         }
     }
 }
