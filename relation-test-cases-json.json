@@ -1,0 +1,197 @@
+[
+  {
+    "name": "Product as target of MODIFICATION",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "MODIFICATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "MODIFICATION",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of MODIFICATION",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "MODIFICATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "MODIFICATION",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Product as target of ACTIVATION",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "ACTIVATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "ACTIVATION",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of ACTIVATION",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "ACTIVATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "ACTIVATION",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Product as target of RENEWAL",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "RENEWAL",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "RENEWAL",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of RENEWAL",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "RENEWAL",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "RENEWAL",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Product as target of RESIGNATION",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "RESIGNATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "RESIGNATION",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of RESIGNATION",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "RESIGNATION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "RESIGNATION",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Product as target of REFINANCING",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "REFINANCING",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "REFINANCING",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of REFINANCING",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "REFINANCING",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "REFINANCING",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Product as target of ABSORPTION",
+    "productId": 2,
+    "relations": [
+      {
+        "relationType": "ABSORPTION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "ABSORPTION",
+    "role": "TARGET",
+    "otherProductId": 1
+  },
+  {
+    "name": "Product as source of ABSORPTION",
+    "productId": 1,
+    "relations": [
+      {
+        "relationType": "ABSORPTION",
+        "sourceId": 1,
+        "targetId": 2
+      }
+    ],
+    "relationType": "ABSORPTION",
+    "role": "SOURCE",
+    "otherProductId": 2
+  },
+  {
+    "name": "Multiple relations",
+    "productId": 3,
+    "relations": [
+      {
+        "relationType": "MODIFICATION",
+        "sourceId": 1,
+        "targetId": 3
+      },
+      {
+        "relationType": "ACTIVATION",
+        "sourceId": 2,
+        "targetId": 3
+      }
+    ],
+    "relationType": "MULTIPLE",
+    "role": "TARGET",
+    "otherProductId": 0
+  },
+  {
+    "name": "No relations",
+    "productId": 1,
+    "relations": [],
+    "relationType": "NONE",
+    "role": "NONE",
+    "otherProductId": 0
+  }
+]
