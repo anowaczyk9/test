@@ -1,20 +1,154 @@
-private boolean isTargetOfRelation(ProductsRelationType relationType) {
-    return relations.stream()
-        .anyMatch(relation -> relation.getRelationType().equals(relationType)
-            && productId.equals(relation.getTargetId()));
-}
+package pl.santander.clp.product.common.relations.snapshot;
 
-private boolean isSourceOfRelation(ProductsRelationType relationType) {
-    return relations.stream()
-        .anyMatch(relation -> relation.getRelationType().equals(relationType)
-            && productId.equals(relation.getSourceId()));
-}
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import pl.santander.clp.product.common.relations.RelationDetails;
 
-private Long getSourceIdWhereTarget(ProductsRelationType relationType) {
-    return relations.stream()
-        .filter(relation -> relation.getRelationType().equals(relationType)
-            && productId.equals(relation.getTargetId()))
-        .findFirst()
-        .map(ProductRelationSnapshot::getSourceId)
-        .orElse(null);
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class RelationDetailsMethodTests {
+
+    private static final Long PRODUCT_ID = 1L;
+    private static final Long OTHER_ID = 2L;
+
+    // Test data providers for each method
+    static Stream<Arguments> isModificationTestData() {
+        return Stream.of(
+            // Test case name, relations set, expected result
+            Arguments.of("No relations", Collections.emptySet(), false),
+            Arguments.of("Product is target of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
+                true),
+            Arguments.of("Product is source of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
+                false),
+            Arguments.of("Product has unrelated ACTIVATION", 
+                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
+                false),
+            Arguments.of("Product has mixed relations including MODIFICATION target", 
+                Set.of(
+                    createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID),
+                    createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)
+                ), 
+                true)
+        );
+    }
+
+    static Stream<Arguments> isModificationSourceProductTestData() {
+        return Stream.of(
+            Arguments.of("No relations", Collections.emptySet(), false),
+            Arguments.of("Product is target of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
+                false),
+            Arguments.of("Product is source of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
+                true),
+            Arguments.of("Product has unrelated ACTIVATION", 
+                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, PRODUCT_ID, OTHER_ID)), 
+                false)
+        );
+    }
+
+    static Stream<Arguments> getModifiedProductIdTestData() {
+        return Stream.of(
+            Arguments.of("No relations", Collections.emptySet(), null),
+            Arguments.of("Product is target of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
+                OTHER_ID),
+            Arguments.of("Product is source of MODIFICATION", 
+                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
+                null),
+            Arguments.of("Product has unrelated ACTIVATION", 
+                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
+                null)
+        );
+    }
+
+    // Additional test data providers for other methods would follow the same pattern
+    
+    // Example for isActivation
+    static Stream<Arguments> isActivationTestData() {
+        return Stream.of(
+            Arguments.of("No relations", Collections.emptySet(), false),
+            Arguments.of("Product is target of ACTIVATION", 
+                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
+                true),
+            Arguments.of("Product is source of ACTIVATION", 
+                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, PRODUCT_ID, OTHER_ID)), 
+                false)
+        );
+    }
+    
+    // Tests for refinancing
+    static Stream<Arguments> isRefinancedByTestData() {
+        return Stream.of(
+            Arguments.of("No relations", Collections.emptySet(), OTHER_ID, false),
+            Arguments.of("Product is source of REFINANCING to specified product", 
+                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, PRODUCT_ID, OTHER_ID)), 
+                OTHER_ID, true),
+            Arguments.of("Product is source of REFINANCING to different product", 
+                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, PRODUCT_ID, 3L)), 
+                OTHER_ID, false),
+            Arguments.of("Product is target of REFINANCING from specified product", 
+                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, OTHER_ID, PRODUCT_ID)), 
+                OTHER_ID, false)
+        );
+    }
+
+    // Helper method to create relation snapshots
+    private static ProductRelationSnapshot createRelation(ProductsRelationType type, Long sourceId, Long targetId) {
+        return ProductRelationSnapshot.builder()
+                .relationType(type)
+                .sourceId(sourceId)
+                .targetId(targetId)
+                .build();
+    }
+
+    // Individual parameterized tests for each method
+    
+    @ParameterizedTest(name = "isModification: {0}")
+    @MethodSource("isModificationTestData")
+    void isModificationTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
+        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
+        assertEquals(expected, service.isModification(), "isModification failed for: " + testCase);
+    }
+
+    @ParameterizedTest(name = "isModificationSourceProduct: {0}")
+    @MethodSource("isModificationSourceProductTestData")
+    void isModificationSourceProductTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
+        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
+        assertEquals(expected, service.isModificationSourceProduct(), "isModificationSourceProduct failed for: " + testCase);
+    }
+
+    @ParameterizedTest(name = "getModifiedProductId: {0}")
+    @MethodSource("getModifiedProductIdTestData")
+    void getModifiedProductIdTest(String testCase, Set<ProductRelationSnapshot> relations, Long expected) {
+        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
+        assertEquals(expected, service.getModifiedProductId(), "getModifiedProductId failed for: " + testCase);
+    }
+
+    @ParameterizedTest(name = "isActivation: {0}")
+    @MethodSource("isActivationTestData")
+    void isActivationTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
+        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
+        assertEquals(expected, service.isActivation(), "isActivation failed for: " + testCase);
+    }
+    
+    // Example of a test with a parameter
+    @ParameterizedTest(name = "isRefinancedBy: {0}")
+    @MethodSource("isRefinancedByTestData")
+    void isRefinancedByTest(String testCase, Set<ProductRelationSnapshot> relations, Long otherProductId, boolean expected) {
+        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
+        assertEquals(expected, service.isRefinancedBy(otherProductId), 
+                "isRefinancedBy failed for: " + testCase);
+    }
+    
+    // Add similar tests for all other methods...
 }
