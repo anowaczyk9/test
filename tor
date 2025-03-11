@@ -1,154 +1,454 @@
 package pl.santander.clp.product.common.relations.snapshot;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import pl.santander.clp.product.common.relations.RelationDetails;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class RelationDetailsMethodTests {
+class RelationDetailsImplTest {
+    private static final Set<ProductRelationSnapshot> relations = new HashSet<>();
+    final static Long confirmedProductId = 1L;
+    final static Long pricingProduct = 3L;
 
-    private static final Long PRODUCT_ID = 1L;
-    private static final Long OTHER_ID = 2L;
-
-    // Test data providers for each method
-    static Stream<Arguments> isModificationTestData() {
-        return Stream.of(
-            // Test case name, relations set, expected result
-            Arguments.of("No relations", Collections.emptySet(), false),
-            Arguments.of("Product is target of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
-                true),
-            Arguments.of("Product is source of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
-                false),
-            Arguments.of("Product has unrelated ACTIVATION", 
-                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
-                false),
-            Arguments.of("Product has mixed relations including MODIFICATION target", 
-                Set.of(
-                    createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID),
-                    createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)
-                ), 
-                true)
-        );
+    @BeforeAll
+    static void setUp() {
+        EnumSet<ProductsRelationType> productsRelationTypes = EnumSet.allOf(ProductsRelationType.class);
+        productsRelationTypes.forEach(relationType -> {
+            relations.add(
+                ProductRelationSnapshot.builder()
+                    .relationType(relationType)
+                    .sourceId(confirmedProductId)
+                    .targetId(pricingProduct)
+                    .build()
+            );
+        });
     }
 
-    static Stream<Arguments> isModificationSourceProductTestData() {
-        return Stream.of(
-            Arguments.of("No relations", Collections.emptySet(), false),
-            Arguments.of("Product is target of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
-                false),
-            Arguments.of("Product is source of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
-                true),
-            Arguments.of("Product has unrelated ACTIVATION", 
-                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, PRODUCT_ID, OTHER_ID)), 
-                false)
-        );
-    }
+    // ===== MODIFICATION TESTS =====
 
-    static Stream<Arguments> getModifiedProductIdTestData() {
-        return Stream.of(
-            Arguments.of("No relations", Collections.emptySet(), null),
-            Arguments.of("Product is target of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, OTHER_ID, PRODUCT_ID)), 
-                OTHER_ID),
-            Arguments.of("Product is source of MODIFICATION", 
-                Collections.singleton(createRelation(ProductsRelationType.MODIFICATION, PRODUCT_ID, OTHER_ID)), 
-                null),
-            Arguments.of("Product has unrelated ACTIVATION", 
-                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
-                null)
-        );
-    }
-
-    // Additional test data providers for other methods would follow the same pattern
-    
-    // Example for isActivation
-    static Stream<Arguments> isActivationTestData() {
-        return Stream.of(
-            Arguments.of("No relations", Collections.emptySet(), false),
-            Arguments.of("Product is target of ACTIVATION", 
-                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, OTHER_ID, PRODUCT_ID)), 
-                true),
-            Arguments.of("Product is source of ACTIVATION", 
-                Collections.singleton(createRelation(ProductsRelationType.ACTIVATION, PRODUCT_ID, OTHER_ID)), 
-                false)
-        );
+    @ParameterizedTest
+    @MethodSource("isModificationSource")
+    void isModificationTest(Long modificationId, 
+                          Set<ProductRelationSnapshot> relations,
+                          Long modifiedProductId) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(modificationId, relations);
+        
+        // when & then
+        assertEquals(modifiedProductId != null, relationDetails.isModification());
+        assertEquals(modifiedProductId, relationDetails.getModifiedProductId());
     }
     
-    // Tests for refinancing
-    static Stream<Arguments> isRefinancedByTestData() {
-        return Stream.of(
-            Arguments.of("No relations", Collections.emptySet(), OTHER_ID, false),
-            Arguments.of("Product is source of REFINANCING to specified product", 
-                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, PRODUCT_ID, OTHER_ID)), 
-                OTHER_ID, true),
-            Arguments.of("Product is source of REFINANCING to different product", 
-                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, PRODUCT_ID, 3L)), 
-                OTHER_ID, false),
-            Arguments.of("Product is target of REFINANCING from specified product", 
-                Collections.singleton(createRelation(ProductsRelationType.REFINANCING, OTHER_ID, PRODUCT_ID)), 
-                OTHER_ID, false)
-        );
+    static Stream<Arguments> isModificationSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), null));
+        
+        // all possible relations
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId));
+        
+        // all possible relations without MODIFICATION
+        Set<ProductRelationSnapshot> relationsWithoutModification = relations
+            .stream()
+            .filter(r -> r.getRelationType() != ProductsRelationType.MODIFICATION)
+            .collect(Collectors.toSet());
+        builder.add(Arguments.of(pricingProduct, relationsWithoutModification, null));
+        
+        return builder.build();
     }
 
-    // Helper method to create relation snapshots
-    private static ProductRelationSnapshot createRelation(ProductsRelationType type, Long sourceId, Long targetId) {
-        return ProductRelationSnapshot.builder()
-                .relationType(type)
-                .sourceId(sourceId)
-                .targetId(targetId)
-                .build();
-    }
-
-    // Individual parameterized tests for each method
-    
-    @ParameterizedTest(name = "isModification: {0}")
-    @MethodSource("isModificationTestData")
-    void isModificationTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
-        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
-        assertEquals(expected, service.isModification(), "isModification failed for: " + testCase);
-    }
-
-    @ParameterizedTest(name = "isModificationSourceProduct: {0}")
-    @MethodSource("isModificationSourceProductTestData")
-    void isModificationSourceProductTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
-        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
-        assertEquals(expected, service.isModificationSourceProduct(), "isModificationSourceProduct failed for: " + testCase);
-    }
-
-    @ParameterizedTest(name = "getModifiedProductId: {0}")
-    @MethodSource("getModifiedProductIdTestData")
-    void getModifiedProductIdTest(String testCase, Set<ProductRelationSnapshot> relations, Long expected) {
-        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
-        assertEquals(expected, service.getModifiedProductId(), "getModifiedProductId failed for: " + testCase);
-    }
-
-    @ParameterizedTest(name = "isActivation: {0}")
-    @MethodSource("isActivationTestData")
-    void isActivationTest(String testCase, Set<ProductRelationSnapshot> relations, boolean expected) {
-        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
-        assertEquals(expected, service.isActivation(), "isActivation failed for: " + testCase);
+    @ParameterizedTest
+    @MethodSource("isModificationSourceProductSource")
+    void isModificationSourceProductTest(Long modificationId, 
+                                        Set<ProductRelationSnapshot> relations,
+                                        boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(modificationId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isModificationSourceProduct());
     }
     
-    // Example of a test with a parameter
-    @ParameterizedTest(name = "isRefinancedBy: {0}")
-    @MethodSource("isRefinancedByTestData")
-    void isRefinancedByTest(String testCase, Set<ProductRelationSnapshot> relations, Long otherProductId, boolean expected) {
-        RelationDetails service = new RelationDetailsService(PRODUCT_ID, relations);
-        assertEquals(expected, service.isRefinancedBy(otherProductId), 
-                "isRefinancedBy failed for: " + testCase);
+    static Stream<Arguments> isModificationSourceProductSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), false));
+        
+        // all possible relations - confirmedProductId is the source
+        builder.add(Arguments.of(confirmedProductId, relations, true));
+        
+        // all possible relations - pricingProduct is the target
+        builder.add(Arguments.of(pricingProduct, relations, false));
+        
+        return builder.build();
+    }
+
+    // ===== ACTIVATION TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isActivationSource")
+    void isActivationTest(Long activationId, 
+                        Set<ProductRelationSnapshot> relations,
+                        Long activatedProductId) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(activationId, relations);
+        
+        // when & then
+        assertEquals(activatedProductId != null, relationDetails.isActivation());
+        assertEquals(activatedProductId, relationDetails.getActivatedProductId());
     }
     
-    // Add similar tests for all other methods...
+    static Stream<Arguments> isActivationSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), null));
+        
+        // all possible relations
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId));
+        
+        // all possible relations without ACTIVATION
+        Set<ProductRelationSnapshot> relationsWithoutActivation = relations
+            .stream()
+            .filter(r -> r.getRelationType() != ProductsRelationType.ACTIVATION)
+            .collect(Collectors.toSet());
+        builder.add(Arguments.of(pricingProduct, relationsWithoutActivation, null));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("isActivationSourceProductSource")
+    void isActivationSourceProductTest(Long activationId, 
+                                      Set<ProductRelationSnapshot> relations,
+                                      boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(activationId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isActivationSourceProduct());
+    }
+    
+    static Stream<Arguments> isActivationSourceProductSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), false));
+        
+        // all possible relations - confirmedProductId is the source
+        builder.add(Arguments.of(confirmedProductId, relations, true));
+        
+        // all possible relations - pricingProduct is the target
+        builder.add(Arguments.of(pricingProduct, relations, false));
+        
+        return builder.build();
+    }
+
+    // ===== RENEWAL TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isRenewalSource")
+    void isRenewalTest(Long renewalId, 
+                      Set<ProductRelationSnapshot> relations,
+                      Long renewedProductId) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(renewalId, relations);
+        
+        // when & then
+        assertEquals(renewedProductId != null, relationDetails.isRenewal());
+        assertEquals(renewedProductId, relationDetails.getRenewedProductId());
+    }
+    
+    static Stream<Arguments> isRenewalSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), null));
+        
+        // all possible relations
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId));
+        
+        // all possible relations without RENEWAL
+        Set<ProductRelationSnapshot> relationsWithoutRenewal = relations
+            .stream()
+            .filter(r -> r.getRelationType() != ProductsRelationType.RENEWAL)
+            .collect(Collectors.toSet());
+        builder.add(Arguments.of(pricingProduct, relationsWithoutRenewal, null));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("isRenewalSourceProductSource")
+    void isRenewalSourceProductTest(Long renewalId, 
+                                   Set<ProductRelationSnapshot> relations,
+                                   boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(renewalId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isRenewalSourceProduct());
+    }
+    
+    static Stream<Arguments> isRenewalSourceProductSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), false));
+        
+        // all possible relations - confirmedProductId is the source
+        builder.add(Arguments.of(confirmedProductId, relations, true));
+        
+        // all possible relations - pricingProduct is the target
+        builder.add(Arguments.of(pricingProduct, relations, false));
+        
+        return builder.build();
+    }
+
+    // ===== RESIGNATION TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isResignationSource")
+    void isResignationTest(Long resignationId, 
+                          Set<ProductRelationSnapshot> relations,
+                          Long resignedProductId) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(resignationId, relations);
+        
+        // when & then
+        assertEquals(resignedProductId != null, relationDetails.isResignation());
+        assertEquals(resignedProductId, relationDetails.getResignedProductId());
+    }
+    
+    static Stream<Arguments> isResignationSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), null));
+        
+        // all possible relations
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId));
+        
+        // all possible relations without RESIGNATION
+        Set<ProductRelationSnapshot> relationsWithoutResignation = relations
+            .stream()
+            .filter(r -> r.getRelationType() != ProductsRelationType.RESIGNATION)
+            .collect(Collectors.toSet());
+        builder.add(Arguments.of(pricingProduct, relationsWithoutResignation, null));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("isResignationSourceProductSource")
+    void isResignationSourceProductTest(Long resignationId, 
+                                       Set<ProductRelationSnapshot> relations,
+                                       boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(resignationId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isResignationSourceProduct());
+    }
+    
+    static Stream<Arguments> isResignationSourceProductSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), false));
+        
+        // all possible relations - confirmedProductId is the source
+        builder.add(Arguments.of(confirmedProductId, relations, true));
+        
+        // all possible relations - pricingProduct is the target
+        builder.add(Arguments.of(pricingProduct, relations, false));
+        
+        return builder.build();
+    }
+
+    // ===== REFINANCING TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isRefinancedBySource")
+    void isRefinancedByTest(Long productId, 
+                           Set<ProductRelationSnapshot> relations,
+                           Long otherProductId,
+                           boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(productId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isRefinancedBy(otherProductId));
+    }
+    
+    static Stream<Arguments> isRefinancedBySource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), pricingProduct, false));
+        
+        // confirmedProductId is source of REFINANCING to pricingProduct - should be true
+        builder.add(Arguments.of(confirmedProductId, relations, pricingProduct, true));
+        
+        // pricingProduct is target of REFINANCING from confirmedProductId - should be false
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId, false));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("doesRefinanceSource")
+    void doesRefinanceTest(Long productId, 
+                          Set<ProductRelationSnapshot> relations,
+                          Long otherProductId,
+                          boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(productId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.doesRefinance(otherProductId));
+    }
+    
+    static Stream<Arguments> doesRefinanceSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), confirmedProductId, false));
+        
+        // pricingProduct is target of REFINANCING from confirmedProductId - should be true
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId, true));
+        
+        // confirmedProductId is source of REFINANCING to pricingProduct - should be false
+        builder.add(Arguments.of(confirmedProductId, relations, pricingProduct, false));
+        
+        return builder.build();
+    }
+
+    // ===== ABSORPTION TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isAbsorbedBySource")
+    void isAbsorbedByTest(Long productId, 
+                         Set<ProductRelationSnapshot> relations,
+                         Long otherProductId,
+                         boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(productId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isAbsorbedBy(otherProductId));
+    }
+    
+    static Stream<Arguments> isAbsorbedBySource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), pricingProduct, false));
+        
+        // confirmedProductId is source of ABSORPTION to pricingProduct - should be true
+        builder.add(Arguments.of(confirmedProductId, relations, pricingProduct, true));
+        
+        // pricingProduct is target of ABSORPTION from confirmedProductId - should be false
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId, false));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("doesAbsorbSource")
+    void doesAbsorbTest(Long productId, 
+                       Set<ProductRelationSnapshot> relations,
+                       Long otherProductId,
+                       boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(productId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.doesAbsorb(otherProductId));
+    }
+    
+    static Stream<Arguments> doesAbsorbSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), confirmedProductId, false));
+        
+        // pricingProduct is target of ABSORPTION from confirmedProductId - should be true
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId, true));
+        
+        // confirmedProductId is source of ABSORPTION to pricingProduct - should be false
+        builder.add(Arguments.of(confirmedProductId, relations, pricingProduct, false));
+        
+        return builder.build();
+    }
+
+    // ===== CORRECTION TESTS =====
+
+    @ParameterizedTest
+    @MethodSource("isCorrectionSource")
+    void isCorrectionTest(Long correctionId, 
+                         Set<ProductRelationSnapshot> relations,
+                         Long correctedProductId) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(correctionId, relations);
+        
+        // when & then
+        assertEquals(correctedProductId != null, relationDetails.isCorrection());
+        assertEquals(correctedProductId, relationDetails.getCorrectedProductId());
+    }
+    
+    static Stream<Arguments> isCorrectionSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(pricingProduct, Set.of(), null));
+        
+        // all possible relations
+        builder.add(Arguments.of(pricingProduct, relations, confirmedProductId));
+        
+        // all possible relations without CORRECTION
+        Set<ProductRelationSnapshot> relationsWithoutCorrection = relations
+            .stream()
+            .filter(r -> r.getRelationType() != ProductsRelationType.CORRECTION)
+            .collect(Collectors.toSet());
+        builder.add(Arguments.of(pricingProduct, relationsWithoutCorrection, null));
+        
+        return builder.build();
+    }
+
+    @ParameterizedTest
+    @MethodSource("isCorrectedSource")
+    void isCorrectedTest(Long correctionId, 
+                       Set<ProductRelationSnapshot> relations,
+                       boolean expected) {
+        // given
+        RelationDetailsService relationDetails = new RelationDetailsService(correctionId, relations);
+        
+        // when & then
+        assertEquals(expected, relationDetails.isCorrected());
+    }
+    
+    static Stream<Arguments> isCorrectedSource() {
+        Stream.Builder<Arguments> builder = Stream.builder();
+        
+        // empty relations case
+        builder.add(Arguments.of(confirmedProductId, Set.of(), false));
+        
+        // all possible relations - confirmedProductId is the source
+        builder.add(Arguments.of(confirmedProductId, relations, true));
+        
+        // all possible relations - pricingProduct is the target
+        builder.add(Arguments.of(pricingProduct, relations, false));
+        
+        return builder.build();
+    }
 }
