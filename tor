@@ -1,227 +1,180 @@
+package pl.santander.clp.product.common.productrelation;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.util.*;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.Arrays;
 
-class ProductRelationComparisonTest {
+import pl.santander.clp.product.common.relations.snapshot.ProductRelationSnapshot;
+import pl.santander.clp.product.common.relations.snapshot.ProductsRelationType;
 
-    private ProductRelationsSnapshot createSnapshot(long productId, List<ProductRelationSnapshot> relations) {
-        ProductRelationsSnapshot snapshot = new ProductRelationsSnapshot();
-        snapshot.setProductId(productId);
-        snapshot.setRelations(new HashSet<>(relations));
-        return snapshot;
+class ProductRelationComparatorTest {
+
+    private ProductRelationComparator comparator;
+
+    @BeforeEach
+    void setUp() {
+        comparator = new ProductRelationComparator();
     }
 
+    @Test
+    void shouldReturnTrueWhenRelationsAreEqual() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        );
+        
+        Set<Long> productIds = Set.of(1L, 2L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertTrue(result, "Relations should be equal when they contain the same elements");
+    }
+
+    @Test
+    void shouldReturnFalseWhenRelationsAreDifferent() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(3L, 103L, ProductsRelationType.ACTIVATION)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        );
+        
+        Set<Long> productIds = Set.of(1L, 2L, 3L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertFalse(result, "Relations should not be equal when they contain different elements");
+    }
+
+    @Test
+    void shouldFilterOutLaunchOrderAndLaunchedRelations() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.LAUNCH_ORDER),
+            createRelationSnapshot(3L, 103L, ProductsRelationType.LAUNCHED)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        );
+        
+        Set<Long> productIds = Set.of(1L, 2L, 3L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertTrue(result, "LAUNCH_ORDER and LAUNCHED relations should be filtered out");
+    }
+
+    @Test
+    void shouldConvertCorrectionToModification() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.CORRECTION)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        );
+        
+        Set<Long> productIds = Set.of(1L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertTrue(result, "CORRECTION should be converted to MODIFICATION");
+    }
+
+    @Test
+    void shouldHandleEmptyRelations() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = new HashSet<>();
+        Set<ProductRelationSnapshot> legacyRelations = new HashSet<>();
+        Set<Long> productIds = Set.of(1L, 2L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertTrue(result, "Empty relations should be considered equal");
+    }
+
+    @Test
+    void shouldReturnFalseWhenNewRelationsContainMoreItems() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL),
+            createRelationSnapshot(3L, 103L, ProductsRelationType.ABSORPTION)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        );
+        
+        Set<Long> productIds = Set.of(1L, 2L, 3L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertFalse(result, "Relations should not be equal when new relations contain more items");
+    }
+
+    @Test
+    void shouldReturnFalseWhenLegacyRelationsContainMoreItems() {
+        // Given
+        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        );
+        
+        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
+            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        );
+        
+        Set<Long> productIds = Set.of(1L, 2L);
+
+        // When
+        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
+
+        // Then
+        assertFalse(result, "Relations should not be equal when legacy relations contain more items");
+    }
+
+    // Helper methods
     private ProductRelationSnapshot createRelationSnapshot(Long sourceId, Long targetId, ProductsRelationType type) {
-        ProductRelationSnapshot snapshot = new ProductRelationSnapshot();
-        snapshot.setSourceId(sourceId);
-        snapshot.setTargetId(targetId);
-        snapshot.setRelationType(type);
-        return snapshot;
+        return ProductRelationSnapshot.builder()
+            .sourceId(sourceId)
+            .targetId(targetId)
+            .relationType(type)
+            .build();
     }
 
-    private ProductRelationDto createRelationDto(Long sourceId, Long targetId, ProductRelationType type) {
-        ProductRelationDto dto = new ProductRelationDto();
-        dto.setSourceId(sourceId);
-        dto.setTargetId(targetId);
-        dto.setType(type);
-        return dto;
-    }
-
-    @Test
-    void equalSetsWithCommonRelationTypes() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.MODIFICATION),
-            createRelationDto(3L, 4L, ProductRelationType.ACTIVATION)
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(3L, 4L, ProductsRelationType.ACTIVATION)
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertTrue(result);
-    }
-    
-    @Test
-    void differentSetsWithCommonRelationTypes() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.MODIFICATION),
-            createRelationDto(3L, 4L, ProductRelationType.ACTIVATION)
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(5L, 6L, ProductsRelationType.ACTIVATION) // Different IDs
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertFalse(result);
-    }
-    
-    @Test
-    void equalSetsWithUnsupportedRelationTypes() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.MODIFICATION),
-            createRelationDto(3L, 4L, ProductRelationType.LAUNCH_ORDER) // Unsupported type
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(3L, 4L, ProductsRelationType.CORRECTION) // Different but also unsupported
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertTrue(result); // Should be equal because unsupported types are ignored
-    }
-    
-    @Test
-    void setsWithOneUnsupportedTypeAndDifferentIds() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.MODIFICATION),
-            createRelationDto(3L, 4L, ProductRelationType.LAUNCH_ORDER) // Unsupported type
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(5L, 6L, ProductsRelationType.LAUNCHED) // Different IDs, unsupported type
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertFalse(result); // Should be false because IDs differ even though types are unsupported
-    }
-    
-    @Test
-    void allUnsupportedTypesWithSameIds() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.LAUNCH_ORDER),
-            createRelationDto(3L, 4L, ProductRelationType.LAUNCHED)
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.CORRECTION),
-                createRelationSnapshot(3L, 4L, ProductsRelationType.LAUNCH_ORDER)
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertTrue(result); // Should be true because all types are unsupported and IDs match
-    }
-    
-    @Test
-    void emptySetComparison() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>();
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>();
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertTrue(result);
-    }
-    
-    @Test
-    void productRelationKeyEquality() {
-        // Direct testing of the ProductRelationKey class
-        
-        // Create keys with supported types
-        ProductRelationKey key1 = ProductRelationKey.builder()
-            .sourceId(1L)
-            .targetId(2L)
-            .relationType("ACTIVATION")
-            .build();
-            
-        ProductRelationKey key2 = ProductRelationKey.builder()
-            .sourceId(1L)
-            .targetId(2L)
-            .relationType("ACTIVATION")
-            .build();
-            
-        ProductRelationKey key3 = ProductRelationKey.builder()
-            .sourceId(1L)
-            .targetId(3L) // Different targetId
-            .relationType("ACTIVATION")
-            .build();
-        
-        // Test equality for supported types
-        assertEquals(key1, key2);
-        assertNotEquals(key1, key3);
-        
-        // Create keys with unsupported types
-        ProductRelationKey key4 = ProductRelationKey.builder()
-            .sourceId(5L)
-            .targetId(6L)
-            .relationType("LAUNCH_ORDER") // Unsupported
-            .build();
-            
-        ProductRelationKey key5 = ProductRelationKey.builder()
-            .sourceId(5L)
-            .targetId(6L)
-            .relationType("LAUNCHED") // Different but also unsupported
-            .build();
-        
-        // Test equality ignores unsupported types
-        assertEquals(key4, key5);
-        
-        // Test that hash codes are consistent with equals
-        assertEquals(key1.hashCode(), key2.hashCode());
-        assertEquals(key4.hashCode(), key5.hashCode());
-    }
-    
-    @Test
-    void mixedSupportedAndUnsupportedTypes() {
-        // Given
-        Set<ProductRelationDto> dtoSet = new HashSet<>(Arrays.asList(
-            createRelationDto(1L, 2L, ProductRelationType.MODIFICATION),
-            createRelationDto(3L, 4L, ProductRelationType.ACTIVATION),
-            createRelationDto(5L, 6L, ProductRelationType.LAUNCH_ORDER) // Unsupported
-        ));
-        
-        Set<ProductRelationsSnapshot> snapshotSet = new HashSet<>(Arrays.asList(
-            createSnapshot(100L, Arrays.asList(
-                createRelationSnapshot(1L, 2L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(3L, 4L, ProductsRelationType.ABSORPTION), // Different supported type
-                createRelationSnapshot(5L, 6L, ProductsRelationType.LAUNCHED) // Unsupported
-            ))
-        ));
-        
-        // When
-        boolean result = compareWithNewRelations(new ArrayList<>(dtoSet), snapshotSet, Set.of(100L));
-        
-        // Then
-        assertFalse(result); // Should be false because supported types differ
+    private Set<ProductRelationSnapshot> createRelationSnapshots(ProductRelationSnapshot... snapshots) {
+        return new HashSet<>(Arrays.asList(snapshots));
     }
 }
