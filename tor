@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.Arrays;
 
 import pl.santander.clp.product.common.relations.snapshot.ProductRelationSnapshot;
+import pl.santander.clp.product.common.relations.snapshot.ProductRelationsSnapshot;
 import pl.santander.clp.product.common.relations.snapshot.ProductsRelationType;
 
 class ProductRelationComparatorTest {
@@ -24,17 +25,19 @@ class ProductRelationComparatorTest {
     @Test
     void shouldReturnTrueWhenRelationsAreEqual() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+                createRelationSnapshot(1L, 102L, ProductsRelationType.RENEWAL)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
+            createRelationDto(1L, 102L, ProductRelationType.RENEWAL)
         );
         
-        Set<Long> productIds = Set.of(1L, 2L);
+        Set<Long> productIds = Set.of(1L);
 
         // When
         boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
@@ -46,14 +49,18 @@ class ProductRelationComparatorTest {
     @Test
     void shouldReturnFalseWhenRelationsAreDifferent() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(3L, 103L, ProductsRelationType.ACTIVATION)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+            ),
+            createProductRelationsSnapshot(3L,
+                createRelationSnapshot(3L, 103L, ProductsRelationType.ACTIVATION)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
+            createRelationDto(2L, 102L, ProductRelationType.RENEWAL)
         );
         
         Set<Long> productIds = Set.of(1L, 2L, 3L);
@@ -68,17 +75,19 @@ class ProductRelationComparatorTest {
     @Test
     void shouldFilterOutLaunchOrderAndLaunchedRelations() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.LAUNCH_ORDER),
-            createRelationSnapshot(3L, 103L, ProductsRelationType.LAUNCHED)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+                createRelationSnapshot(1L, 102L, ProductsRelationType.LAUNCH_ORDER),
+                createRelationSnapshot(1L, 103L, ProductsRelationType.LAUNCHED)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION)
         );
         
-        Set<Long> productIds = Set.of(1L, 2L, 3L);
+        Set<Long> productIds = Set.of(1L);
 
         // When
         boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
@@ -90,12 +99,14 @@ class ProductRelationComparatorTest {
     @Test
     void shouldConvertCorrectionToModification() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.CORRECTION)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.CORRECTION)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION)
         );
         
         Set<Long> productIds = Set.of(1L);
@@ -110,8 +121,8 @@ class ProductRelationComparatorTest {
     @Test
     void shouldHandleEmptyRelations() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = new HashSet<>();
-        Set<ProductRelationSnapshot> legacyRelations = new HashSet<>();
+        Set<ProductRelationsSnapshot> newRelations = new HashSet<>();
+        Set<ProductRelationDto> legacyRelations = new HashSet<>();
         Set<Long> productIds = Set.of(1L, 2L);
 
         // When
@@ -124,18 +135,22 @@ class ProductRelationComparatorTest {
     @Test
     void shouldReturnFalseWhenNewRelationsContainMoreItems() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL),
-            createRelationSnapshot(3L, 103L, ProductsRelationType.ABSORPTION)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
+                createRelationSnapshot(1L, 102L, ProductsRelationType.RENEWAL)
+            ),
+            createProductRelationsSnapshot(3L,
+                createRelationSnapshot(3L, 103L, ProductsRelationType.ABSORPTION)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
+            createRelationDto(1L, 102L, ProductRelationType.RENEWAL)
         );
         
-        Set<Long> productIds = Set.of(1L, 2L, 3L);
+        Set<Long> productIds = Set.of(1L, 3L);
 
         // When
         boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
@@ -147,13 +162,15 @@ class ProductRelationComparatorTest {
     @Test
     void shouldReturnFalseWhenLegacyRelationsContainMoreItems() {
         // Given
-        Set<ProductRelationSnapshot> newRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+        Set<ProductRelationsSnapshot> newRelations = Set.of(
+            createProductRelationsSnapshot(1L,
+                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
+            )
         );
         
-        Set<ProductRelationSnapshot> legacyRelations = createRelationSnapshots(
-            createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-            createRelationSnapshot(2L, 102L, ProductsRelationType.RENEWAL)
+        Set<ProductRelationDto> legacyRelations = createRelationDtos(
+            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
+            createRelationDto(2L, 102L, ProductRelationType.RENEWAL)
         );
         
         Set<Long> productIds = Set.of(1L, 2L);
@@ -173,8 +190,28 @@ class ProductRelationComparatorTest {
             .relationType(type)
             .build();
     }
-
-    private Set<ProductRelationSnapshot> createRelationSnapshots(ProductRelationSnapshot... snapshots) {
-        return new HashSet<>(Arrays.asList(snapshots));
+    
+    private ProductRelationsSnapshot createProductRelationsSnapshot(Long productId, ProductRelationSnapshot... relations) {
+        ProductRelationsSnapshot snapshot = ProductRelationsSnapshot.builder()
+            .productId(productId)
+            .build();
+        
+        for (ProductRelationSnapshot relation : relations) {
+            snapshot.getRelations().add(relation);
+        }
+        
+        return snapshot;
+    }
+    
+    private ProductRelationDto createRelationDto(Long sourceId, Long targetId, ProductRelationType type) {
+        return ProductRelationDto.builder()
+            .sourceId(sourceId)
+            .targetId(targetId)
+            .type(type)
+            .build();
+    }
+    
+    private Set<ProductRelationDto> createRelationDtos(ProductRelationDto... dtos) {
+        return new HashSet<>(Arrays.asList(dtos));
     }
 }
