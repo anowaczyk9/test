@@ -1,217 +1,80 @@
-package pl.santander.clp.product.common.productrelation;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.BeforeEach;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Arrays;
-
-import pl.santander.clp.product.common.relations.snapshot.ProductRelationSnapshot;
-import pl.santander.clp.product.common.relations.snapshot.ProductRelationsSnapshot;
-import pl.santander.clp.product.common.relations.snapshot.ProductsRelationType;
-
-class ProductRelationComparatorTest {
-
-    private ProductRelationComparator comparator;
-
-    @BeforeEach
-    void setUp() {
-        comparator = new ProductRelationComparator();
-    }
-
-    @Test
-    void shouldReturnTrueWhenRelationsAreEqual() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.RENEWAL)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
-            createRelationDto(1L, 102L, ProductRelationType.RENEWAL)
-        );
-        
-        Set<Long> productIds = Set.of(1L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertTrue(result, "Relations should be equal when they contain the same elements");
-    }
-
-    @Test
-    void shouldReturnFalseWhenRelationsAreDifferent() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
-            ),
-            createProductRelationsSnapshot(3L,
-                createRelationSnapshot(3L, 103L, ProductsRelationType.ACTIVATION)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
-            createRelationDto(2L, 102L, ProductRelationType.RENEWAL)
-        );
-        
-        Set<Long> productIds = Set.of(1L, 2L, 3L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertFalse(result, "Relations should not be equal when they contain different elements");
-    }
-
-    @Test
-    void shouldFilterOutLaunchOrderAndLaunchedRelations() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.LAUNCH_ORDER),
-                createRelationSnapshot(1L, 103L, ProductsRelationType.LAUNCHED)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION)
-        );
-        
-        Set<Long> productIds = Set.of(1L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertTrue(result, "LAUNCH_ORDER and LAUNCHED relations should be filtered out");
-    }
-
-    @Test
-    void shouldConvertCorrectionToModification() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.CORRECTION)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION)
-        );
-        
-        Set<Long> productIds = Set.of(1L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertTrue(result, "CORRECTION should be converted to MODIFICATION");
-    }
-
-    @Test
-    void shouldHandleEmptyRelations() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = new HashSet<>();
-        Set<ProductRelationDto> legacyRelations = new HashSet<>();
-        Set<Long> productIds = Set.of(1L, 2L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertTrue(result, "Empty relations should be considered equal");
-    }
-
-    @Test
-    void shouldReturnFalseWhenNewRelationsContainMoreItems() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.RENEWAL)
-            ),
-            createProductRelationsSnapshot(3L,
-                createRelationSnapshot(3L, 103L, ProductsRelationType.ABSORPTION)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
-            createRelationDto(1L, 102L, ProductRelationType.RENEWAL)
-        );
-        
-        Set<Long> productIds = Set.of(1L, 3L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertFalse(result, "Relations should not be equal when new relations contain more items");
-    }
-
-    @Test
-    void shouldReturnFalseWhenLegacyRelationsContainMoreItems() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = createRelationDtos(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
-            createRelationDto(2L, 102L, ProductRelationType.RENEWAL)
-        );
-        
-        Set<Long> productIds = Set.of(1L, 2L);
-
-        // When
-        boolean result = comparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-
-        // Then
-        assertFalse(result, "Relations should not be equal when legacy relations contain more items");
-    }
-
-    // Helper methods
-    private ProductRelationSnapshot createRelationSnapshot(Long sourceId, Long targetId, ProductsRelationType type) {
-        return ProductRelationSnapshot.builder()
-            .sourceId(sourceId)
-            .targetId(targetId)
-            .relationType(type)
-            .build();
-    }
+@RequiredArgsConstructor
+class GetProductAttributesService implements GetProductAttributesPort {
+    private final GetProductAttributesDefinitionPort productAttributesPort;
+    private final NewCbpGetProductAttributesPort newGetProductAttributesPort;
     
-    private ProductRelationsSnapshot createProductRelationsSnapshot(Long productId, ProductRelationSnapshot... relations) {
-        ProductRelationsSnapshot snapshot = ProductRelationsSnapshot.builder()
-            .productId(productId)
-            .build();
-        
-        for (ProductRelationSnapshot relation : relations) {
-            snapshot.getRelations().add(relation);
+    @Value("FINANCING_INVESTMENT_LOAN")
+    private Set<CbpProductType> newConfigProducts;
+    
+    @Override
+    public Map<String, ProductParameterDto> getProductAttributes(CbpProductType cbpProductType,
+                                                               LocalDate effectiveAt) {
+        if (!isProductTypeSupported(cbpProductType)) {
+            return Collections.emptyMap();
         }
         
-        return snapshot;
+        Map<String, ProductParameter> productParameterMap = shouldUseNewConfiguration(cbpProductType)
+            ? determineProductParametersForNewCbp(cbpProductType, effectiveAt)
+            : determineProductParametersForOldCbp(cbpProductType, effectiveAt);
+            
+        return ProductParameter.toProductParameterDtoMap(productParameterMap);
     }
     
-    private ProductRelationDto createRelationDto(Long sourceId, Long targetId, ProductRelationType type) {
-        return ProductRelationDto.builder()
-            .sourceId(sourceId)
-            .targetId(targetId)
-            .type(type)
-            .build();
+    private Map<String, ProductParameter> determineProductParametersForOldCbp(
+            CbpProductType cbpProductType,
+            LocalDate effectiveAt
+    ) {
+        String productDefinitionId = cbpProductType.getCbpId();
+        ProductDefinition productDefinition = getProductDefinitionFromOldCbp(productDefinitionId, effectiveAt);
+        Map<String, ProductParameter> parameterMap = 
+            ProductAttributesMapper.mapCbpProductParameters(productDefinition);
+        
+        fillHiddenFields(productDefinition, parameterMap);
+        return parameterMap;
     }
     
-    private Set<ProductRelationDto> createRelationDtos(ProductRelationDto... dtos) {
-        return new HashSet<>(Arrays.asList(dtos));
+    private Map<String, ProductParameter> determineProductParametersForNewCbp(
+            CbpProductType cbpProductType,
+            LocalDate effectiveAt
+    ) {
+        // For null date - return latest new cbp config
+        if (effectiveAt == null) {
+            return getLatestParameterMap(cbpProductType);
+        }
+        
+        // Try to get configuration for the specified effectiveAt date
+        return newGetProductAttributesPort.getProductAttributesEffectiveAt(cbpProductType, effectiveAt)
+            .map(ProductParameter::toProductParameterMap)
+            .orElseGet(() -> handleMissingNewConfig(cbpProductType, effectiveAt));
+    }
+    
+    private Map<String, ProductParameter> handleMissingNewConfig(
+            CbpProductType cbpProductType,
+            LocalDate effectiveAt
+    ) {
+        ProductDefinition productDefinition = 
+            getProductDefinitionFromOldCbp(cbpProductType.getCbpId(), effectiveAt);
+            
+        // If config from OLD CBP is the latest (not found for effectiveDate)
+        // then return latest from NEW CBP
+        if (!productDefinition.isUsingEffectiveDateConfiguration()) {
+            return getLatestParameterMap(cbpProductType);
+        }
+        
+        // Otherwise use the effective date configuration from the old CBP
+        Map<String, ProductParameter> parameterMap = 
+            ProductAttributesMapper.mapCbpProductParameters(productDefinition);
+        fillHiddenFields(productDefinition, parameterMap);
+        return parameterMap;
+    }
+    
+    private ProductDefinition getProductDefinitionFromOldCbp(String productDefinitionId, LocalDate effectiveAt) {
+        return productAttributesPort.getProductAttributesDefinition(productDefinitionId, effectiveAt);
+    }
+    
+    private Map<String, ProductParameter> getLatestParameterMap(CbpProductType cbpProductType) {
+        return ProductParameter.toProductParameterMap(
+            // Rest of implementation not visible in images
+        );
     }
 }
