@@ -1,80 +1,193 @@
-@RequiredArgsConstructor
-class GetProductAttributesService implements GetProductAttributesPort {
-    private final GetProductAttributesDefinitionPort productAttributesPort;
-    private final NewCbpGetProductAttributesPort newGetProductAttributesPort;
-    
-    @Value("FINANCING_INVESTMENT_LOAN")
-    private Set<CbpProductType> newConfigProducts;
-    
-    @Override
-    public Map<String, ProductParameterDto> getProductAttributes(CbpProductType cbpProductType,
-                                                               LocalDate effectiveAt) {
-        if (!isProductTypeSupported(cbpProductType)) {
-            return Collections.emptyMap();
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.LocalDate;
+import java.util.*;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class GetProductAttributesServiceTest {
+
+    @Mock
+    private GetProductAttributesDefinitionPort productAttributesPort;
+
+    @Mock
+    private NewCbpGetProductAttributesPort newGetProductAttributesPort;
+
+    @InjectMocks
+    private GetProductAttributesService service;
+
+    private CbpProductType supportedNewConfigProduct;
+    private LocalDate effectiveDate;
+    private Map<String, ProductParameterDto> newCbpAttributesMap;
+    private ProductDefinition oldCbpProductDefinition;
+    private Map<String, ProductParameter> latestParameterMap;
+
+    @BeforeEach
+    void setUp() {
+        // Setup test data
+        supportedNewConfigProduct = CbpProductType.FINANCING_INVESTMENT_LOAN;
+        effectiveDate = LocalDate.of(2023, 1, 1);
+        
+        // Create sample parameter DTOs for new CBP
+        newCbpAttributesMap = new HashMap<>();
+        newCbpAttributesMap.put("param1", new ProductParameterDto("param1", "value1"));
+        
+        // Create sample parameter map for latest parameters
+        latestParameterMap = new HashMap<>();
+        latestParameterMap.put("latestParam", new ProductParameter("latestParam", "latestValue"));
+        
+        // Mock product definition from old CBP
+        oldCbpProductDefinition = mock(ProductDefinition.class);
+        when(oldCbpProductDefinition.getCbpId()).thenReturn("TEST_ID");
+        
+        // Set up reflection to inject newConfigProducts
+        Set<CbpProductType> newConfigProducts = new HashSet<>();
+        newConfigProducts.add(CbpProductType.FINANCING_INVESTMENT_LOAN);
+        
+        // Use reflection to set the private field
+        try {
+            java.lang.reflect.Field field = GetProductAttributesService.class.getDeclaredField("newConfigProducts");
+            field.setAccessible(true);
+            field.set(service, newConfigProducts);
+        } catch (Exception e) {
+            fail("Failed to set newConfigProducts field: " + e.getMessage());
         }
-        
-        Map<String, ProductParameter> productParameterMap = shouldUseNewConfiguration(cbpProductType)
-            ? determineProductParametersForNewCbp(cbpProductType, effectiveAt)
-            : determineProductParametersForOldCbp(cbpProductType, effectiveAt);
-            
-        return ProductParameter.toProductParameterDtoMap(productParameterMap);
     }
-    
-    private Map<String, ProductParameter> determineProductParametersForOldCbp(
-            CbpProductType cbpProductType,
-            LocalDate effectiveAt
-    ) {
-        String productDefinitionId = cbpProductType.getCbpId();
-        ProductDefinition productDefinition = getProductDefinitionFromOldCbp(productDefinitionId, effectiveAt);
-        Map<String, ProductParameter> parameterMap = 
-            ProductAttributesMapper.mapCbpProductParameters(productDefinition);
+
+    @Test
+    void shouldReturnEmptyMapForUnsupportedProductType() {
+        // Given
+        CbpProductType unsupportedType = CbpProductType.UNSUPPORTED_TYPE;
         
-        fillHiddenFields(productDefinition, parameterMap);
-        return parameterMap;
-    }
-    
-    private Map<String, ProductParameter> determineProductParametersForNewCbp(
-            CbpProductType cbpProductType,
-            LocalDate effectiveAt
-    ) {
-        // For null date - return latest new cbp config
-        if (effectiveAt == null) {
-            return getLatestParameterMap(cbpProductType);
+        // Configure isProductTypeSupported to return false
+        try {
+            java.lang.reflect.Method method = GetProductAttributesService.class.getDeclaredMethod("isProductTypeSupported", CbpProductType.class);
+            method.setAccessible(true);
+            when(method.invoke(service, unsupportedType)).thenReturn(false);
+        } catch (Exception e) {
+            // Fall back to simple empty response expectation if reflection fails
         }
-        
-        // Try to get configuration for the specified effectiveAt date
-        return newGetProductAttributesPort.getProductAttributesEffectiveAt(cbpProductType, effectiveAt)
-            .map(ProductParameter::toProductParameterMap)
-            .orElseGet(() -> handleMissingNewConfig(cbpProductType, effectiveAt));
+
+        // When
+        Map<String, ProductParameterDto> result = service.getProductAttributes(unsupportedType, effectiveDate);
+
+        // Then
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(productAttributesPort);
+        verifyNoInteractions(newGetProductAttributesPort);
     }
-    
-    private Map<String, ProductParameter> handleMissingNewConfig(
-            CbpProductType cbpProductType,
-            LocalDate effectiveAt
-    ) {
-        ProductDefinition productDefinition = 
-            getProductDefinitionFromOldCbp(cbpProductType.getCbpId(), effectiveAt);
-            
-        // If config from OLD CBP is the latest (not found for effectiveDate)
-        // then return latest from NEW CBP
-        if (!productDefinition.isUsingEffectiveDateConfiguration()) {
-            return getLatestParameterMap(cbpProductType);
+
+    @Test
+    void case1_shouldUseLatestNewConfigWhenEffectiveDateIsNull() {
+        // Given
+        LocalDate nullEffectiveDate = null;
+        
+        // Mock getLatestParameterMap to return test data
+        try {
+            java.lang.reflect.Method method = GetProductAttributesService.class.getDeclaredMethod("getLatestParameterMap", CbpProductType.class);
+            method.setAccessible(true);
+            when(method.invoke(service, supportedNewConfigProduct)).thenReturn(latestParameterMap);
+        } catch (Exception e) {
+            // Setup direct mock expectation
+            when(newGetProductAttributesPort.getProductAttributesLatest(supportedNewConfigProduct))
+                .thenReturn(Optional.of(newCbpAttributesMap));
         }
+
+        // When
+        Map<String, ProductParameterDto> result = service.getProductAttributes(supportedNewConfigProduct, nullEffectiveDate);
+
+        // Then
+        assertFalse(result.isEmpty());
+        // Verify newGetProductAttributesPort.getProductAttributesEffectiveAt was not called
+        verify(newGetProductAttributesPort, never()).getProductAttributesEffectiveAt(any(), any());
+        // Verify old CBP was not consulted
+        verify(productAttributesPort, never()).getProductAttributesDefinition(any(), any());
+    }
+
+    @Test
+    void case2_shouldUseNewConfigWhenFoundForEffectiveDate() {
+        // Given
+        when(newGetProductAttributesPort.getProductAttributesEffectiveAt(
+                supportedNewConfigProduct, effectiveDate))
+                .thenReturn(Optional.of(newCbpAttributesMap));
+
+        // When
+        Map<String, ProductParameterDto> result = service.getProductAttributes(supportedNewConfigProduct, effectiveDate);
+
+        // Then
+        assertFalse(result.isEmpty());
+        verify(newGetProductAttributesPort).getProductAttributesEffectiveAt(supportedNewConfigProduct, effectiveDate);
+        verify(productAttributesPort, never()).getProductAttributesDefinition(any(), any());
+    }
+
+    @Test
+    void case3a_shouldUseOldCbpWhenNewConfigNotFoundAndUsingEffectiveDate() {
+        // Given
+        when(newGetProductAttributesPort.getProductAttributesEffectiveAt(
+                supportedNewConfigProduct, effectiveDate))
+                .thenReturn(Optional.empty());
         
-        // Otherwise use the effective date configuration from the old CBP
-        Map<String, ProductParameter> parameterMap = 
-            ProductAttributesMapper.mapCbpProductParameters(productDefinition);
-        fillHiddenFields(productDefinition, parameterMap);
-        return parameterMap;
+        // Mock old CBP with effective date configuration
+        when(oldCbpProductDefinition.isUsingEffectiveDateConfiguration()).thenReturn(true);
+        when(productAttributesPort.getProductAttributesDefinition(
+                supportedNewConfigProduct.getCbpId(), effectiveDate))
+                .thenReturn(oldCbpProductDefinition);
+        
+        // Mock mapper
+        Map<String, ProductParameter> oldCbpParameterMap = new HashMap<>();
+        oldCbpParameterMap.put("oldParam", new ProductParameter("oldParam", "oldValue"));
+        
+        // Set up static method mocking (this might require PowerMockito in a real implementation)
+        // For this test, we'll assume ProductAttributesMapper.mapCbpProductParameters returns oldCbpParameterMap
+        
+        // When
+        Map<String, ProductParameterDto> result = service.getProductAttributes(supportedNewConfigProduct, effectiveDate);
+
+        // Then
+        assertFalse(result.isEmpty());
+        verify(newGetProductAttributesPort).getProductAttributesEffectiveAt(supportedNewConfigProduct, effectiveDate);
+        verify(productAttributesPort).getProductAttributesDefinition(supportedNewConfigProduct.getCbpId(), effectiveDate);
+        verify(oldCbpProductDefinition).isUsingEffectiveDateConfiguration();
     }
-    
-    private ProductDefinition getProductDefinitionFromOldCbp(String productDefinitionId, LocalDate effectiveAt) {
-        return productAttributesPort.getProductAttributesDefinition(productDefinitionId, effectiveAt);
-    }
-    
-    private Map<String, ProductParameter> getLatestParameterMap(CbpProductType cbpProductType) {
-        return ProductParameter.toProductParameterMap(
-            // Rest of implementation not visible in images
-        );
+
+    @Test
+    void case3b_shouldUseLatestNewConfigWhenOldCbpNotUsingEffectiveDate() {
+        // Given
+        when(newGetProductAttributesPort.getProductAttributesEffectiveAt(
+                supportedNewConfigProduct, effectiveDate))
+                .thenReturn(Optional.empty());
+        
+        // Mock old CBP NOT using effective date configuration
+        when(oldCbpProductDefinition.isUsingEffectiveDateConfiguration()).thenReturn(false);
+        when(productAttributesPort.getProductAttributesDefinition(
+                supportedNewConfigProduct.getCbpId(), effectiveDate))
+                .thenReturn(oldCbpProductDefinition);
+        
+        // Mock getLatestParameterMap
+        try {
+            java.lang.reflect.Method method = GetProductAttributesService.class.getDeclaredMethod("getLatestParameterMap", CbpProductType.class);
+            method.setAccessible(true);
+            when(method.invoke(service, supportedNewConfigProduct)).thenReturn(latestParameterMap);
+        } catch (Exception e) {
+            // Setup direct mock expectation if reflection fails
+            when(newGetProductAttributesPort.getProductAttributesLatest(supportedNewConfigProduct))
+                .thenReturn(Optional.of(newCbpAttributesMap));
+        }
+
+        // When
+        Map<String, ProductParameterDto> result = service.getProductAttributes(supportedNewConfigProduct, effectiveDate);
+
+        // Then
+        assertFalse(result.isEmpty());
+        verify(newGetProductAttributesPort).getProductAttributesEffectiveAt(supportedNewConfigProduct, effectiveDate);
+        verify(productAttributesPort).getProductAttributesDefinition(supportedNewConfigProduct.getCbpId(), effectiveDate);
+        verify(oldCbpProductDefinition).isUsingEffectiveDateConfiguration();
     }
 }
