@@ -1,1 +1,7 @@
-const splitText = text.split(/(?<![\\])\|/);
+@Schema(
+        description = "Indicates whether this product definition was found based on the effective date. " +
+                      "If true - Product Definition was retrieved for the specific effectiveAt date. " +
+                      "If false - Product Definition is the latest available (not date-specific).",
+        example = "true",
+        title = "Effective Date Configuration Flag"
+    )
