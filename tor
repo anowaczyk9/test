@@ -1,7 +1,234 @@
-@Schema(
-        description = "Indicates whether this product definition was found based on the effective date. " +
-                      "If true - Product Definition was retrieved for the specific effectiveAt date. " +
-                      "If false - Product Definition is the latest available (not date-specific).",
-        example = "true",
-        title = "Effective Date Configuration Flag"
+package pl.santander.clp.standardconfiguration.adapter.in.web;
+
+import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
+
+import java.util.Set;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import pl.santander.clp.common.model.dto.standardconfiguration.ConfigurationFileContentList;
+import pl.santander.clp.common.model.dto.standardconfiguration.ConfigurationHistoryDto;
+import pl.santander.clp.standardconfiguration.application.port.in.GetConfigurationHistoryPort;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping(value = @"/cbp/standard-configuration", produces = APPLICATION_JSON_VALUE)
+@Tag(name = "Configuration History", description = "Operations related to configuration history")
+public class GetConfigurationHistoryController {
+    private final GetConfigurationHistoryPort getConfigurationHistoryPort;
+
+    //@RolesAllowed({ADMIN_CONSOLE})
+    @GetMapping(@"/history") 
+    @Operation(
+        summary = "Get configuration history",
+        description = "Returns the uploaded configuration history for CBP",
+        responses = {
+            @ApiResponse(
+                responseCode = "200", 
+                description = "Successful operation",
+                content = @Content(
+                    mediaType = APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = ConfigurationHistoryDto.class)
+                )
+            )
+        }
     )
+    public ConfigurationHistoryDto getConfigFilesHistory() {
+        return getConfigurationHistoryPort.getConfigurationHistory();
+    }
+    
+    //@RolesAllowed({ADMIN_CONSOLE})
+    @GetMapping(value = @"/files")
+    @Operation(
+        summary = "Get configuration files",
+        description = "Returns XLS and DRL files for given configuration IDs",
+        responses = {
+            @ApiResponse(
+                responseCode = "200", 
+                description = "Successful operation",
+                content = @Content(
+                    mediaType = APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = ConfigurationFileContentList.class)
+                )
+            )
+        }
+    )
+    public ConfigurationFileContentList getConfigFileContentList(
+            @Parameter(description = "List of configuration file IDs", required = true)
+            @RequestParam Set<Long> configFileIds) {
+        return getConfigurationHistoryPort.getConfigFileContentList(configFileIds);
+    }
+}
+
+
+package pl.santander.clp.common.model.dto.standardconfiguration;
+
+import org.junit.jupiter.api.Test;
+import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class StandardConfigurationMappersTest {
+
+    @Test
+    void testFromStandardConfigurationList_toConfigurationFileContentList_withValidData() {
+        // Given
+        byte[] testFile = "test content".getBytes();
+        LocalDateTime now = LocalDateTime.now();
+        
+        StandardConfigurationDto dto1 = createStandardConfigurationDto(1L, "content1", testFile, now);
+        StandardConfigurationDto dto2 = createStandardConfigurationDto(2L, "content2", testFile, now);
+        
+        List<StandardConfigurationDto> dtos = Arrays.asList(dto1, dto2);
+        
+        // When
+        ConfigurationFileContentList result = ConfigurationFileContentList.fromStandardConfigurationList(dtos);
+        
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.files());
+        assertEquals(2, result.files().size());
+        
+        // Check first mapping
+        assertEquals(1L, result.files().get(0).id);
+        assertEquals("content1", result.files().get(0).content);
+        assertArrayEquals(testFile, result.files().get(0).file);
+        
+        // Check second mapping
+        assertEquals(2L, result.files().get(1).id);
+        assertEquals("content2", result.files().get(1).content);
+        assertArrayEquals(testFile, result.files().get(1).file);
+    }
+    
+    @Test
+    void testFromStandardConfigurationList_toConfigurationFileContentList_withNullList() {
+        // When
+        ConfigurationFileContentList result = ConfigurationFileContentList.fromStandardConfigurationList(null);
+        
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.files());
+        assertTrue(result.files().isEmpty());
+    }
+    
+    @Test
+    void testFromStandardConfigurationList_toConfigurationFileContentList_withEmptyList() {
+        // When
+        ConfigurationFileContentList result = 
+            ConfigurationFileContentList.fromStandardConfigurationList(Collections.emptyList());
+        
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.files());
+        assertTrue(result.files().isEmpty());
+    }
+    
+    @Test
+    void testFromStandardConfiguration_toConfigurationFileContent() {
+        // Given
+        byte[] testFile = "test content".getBytes();
+        LocalDateTime now = LocalDateTime.now();
+        StandardConfigurationDto dto = createStandardConfigurationDto(1L, "content1", testFile, now);
+        
+        // When
+        ConfigurationFileContentList.ConfigurationFileContent result = 
+            ConfigurationFileContentList.ConfigurationFileContent.fromStandardConfiguration(dto);
+        
+        // Then
+        assertNotNull(result);
+        assertEquals(1L, result.id);
+        assertEquals("content1", result.content);
+        assertArrayEquals(testFile, result.file);
+    }
+    
+    @Test
+    void testFromStandardConfigurationList_toConfigurationHistoryDto_withValidData() {
+        // Given
+        byte[] testFile = "test content".getBytes();
+        LocalDateTime now = LocalDateTime.now();
+        
+        StandardConfigurationDto dto1 = createFullStandardConfigurationDto(
+            1L, "content1", testFile, now, "user1", true, "file1.xls");
+        StandardConfigurationDto dto2 = createFullStandardConfigurationDto(
+            2L, "content2", testFile, now, "user2", false, "file2.xls");
+        
+        List<StandardConfigurationDto> dtos = Arrays.asList(dto1, dto2);
+        
+        // When
+        ConfigurationHistoryDto result = ConfigurationHistoryDto.fromStandardConfigurationList(dtos);
+        
+        // Then
+        assertNotNull(result);
+        assertNotNull(result.configurations());
+        assertEquals(2, result.configurations().size());
+        
+        // Check first mapping
+        assertEquals(1L, result.configurations().get(0).id);
+        assertEquals(now, result.configurations().get(0).createdDate);
+        assertEquals("user1", result.configurations().get(0).createdBy);
+        assertTrue(result.configurations().get(0).archival);
+        assertEquals("file1.xls", result.configurations().get(0).fileName);
+        
+        // Check second mapping
+        assertEquals(2L, result.configurations().get(1).id);
+        assertEquals(now, result.configurations().get(1).createdDate);
+        assertEquals("user2", result.configurations().get(1).createdBy);
+        assertFalse(result.configurations().get(1).archival);
+        assertEquals("file2.xls", result.configurations().get(1).fileName);
+    }
+    
+    @Test
+    void testFromStandardConfiguration_toConfigurationFileInfo() {
+        // Given
+        byte[] testFile = "test content".getBytes();
+        LocalDateTime now = LocalDateTime.now();
+        StandardConfigurationDto dto = createFullStandardConfigurationDto(
+            1L, "content1", testFile, now, "user1", true, "file1.xls");
+        
+        // When
+        ConfigurationHistoryDto.ConfigurationFileInfo result = 
+            ConfigurationHistoryDto.ConfigurationFileInfo.fromStandardConfiguration(dto);
+        
+        // Then
+        assertNotNull(result);
+        assertEquals(1L, result.id);
+        assertEquals(now, result.createdDate);
+        assertEquals("user1", result.createdBy);
+        assertTrue(result.archival);
+        assertEquals("file1.xls", result.fileName);
+    }
+    
+    // Helper methods to create test data
+    
+    private StandardConfigurationDto createStandardConfigurationDto(
+            Long id, String content, byte[] file, LocalDateTime createdDate) {
+        StandardConfigurationDto dto = new StandardConfigurationDto();
+        dto.setId(id);
+        dto.setContent(content);
+        dto.setFile(file);
+        dto.setCreatedDate(createdDate);
+        return dto;
+    }
+    
+    private StandardConfigurationDto createFullStandardConfigurationDto(
+            Long id, String content, byte[] file, LocalDateTime createdDate, 
+            String createdBy, boolean archival, String fileName) {
+        StandardConfigurationDto dto = createStandardConfigurationDto(id, content, file, createdDate);
+        dto.setCreatedBy(createdBy);
+        dto.setArchival(archival);
+        dto.setFileName(fileName);
+        return dto;
+    }
+}
