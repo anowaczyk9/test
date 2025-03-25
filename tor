@@ -1,65 +1,86 @@
-private static final Map<CbpPropertyType, StandardRangeCheckStrategy> STRATEGY_MAP = Map.ofEntries(
-        Map.entry(CbpPropertyType.ESTIMATED_MARGIN_PERCENTAGE, new MarginStandardRangeStrategy(MarginType.MARGIN)),
-        Map.entry(CbpPropertyType.MARGIN, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.POSTPONED_PAYMENT_DEADLINE, new DefaultStandardRangeStrategy(StandardProductInput::getMaximumPaymentDeferralPeriod)),
-        Map.entry(CbpPropertyType.COMMISSION_FOR_OPENING_LETTER_OF_CREDIT_MIN_AMOUNT, new CommissionStandardRangeStrategy(OPEN_LC, CommissionData::getMinAmount)),
-        Map.entry(CbpPropertyType.COMMISSION_FOR_OPENING_LETTER_OF_CREDIT_PERCENTAGE, new CommissionStandardRangeStrategy(OPEN_LC, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.COMMISSION_FOR_OPENING_LETTER_OF_CREDIT_FREQUENCY, new CommissionFrequencyStandardRangeStrategy(OPEN_LC)),
-        Map.entry(CbpPropertyType.COMMISSION_FOR_PAYMENT_OF_LETTER_OF_CREDIT_MIN_AMOUNT, new CommissionStandardRangeStrategy(PAYMENT_LC, CommissionData::getMinAmount)),
-        Map.entry(CbpPropertyType.COMMISSION_FOR_PAYMENT_OF_LETTER_OF_CREDIT_PERCENTAGE, new CommissionStandardRangeStrategy(PAYMENT_LC, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.OTHER_LETTER_OF_CREDIT_CURRENCIES, new DefaultStandardRangeStrategy(StandardProductInput::getCurrencySpreadForOtherCurrencies)),
-        Map.entry(CbpPropertyType.MAXIMUM_FINANCING_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getMaximumFinancingPeriod)),
-        Map.entry(CbpPropertyType.SINGLE_GUARANTEE_LIMIT, new SingleGuaranteeLimitStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.NOT_QUALIFIED_COSTS_SOURCE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.BONUS_WITHDRAWAL_TYPE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.RESCHEDULING_TYPE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.PROGRAMME_NAME_TECH, new DefaultStandardRangeStrategy(StandardProductInput::getTechProgrammeName)),
-        Map.entry(CbpPropertyType.PROGRAMME_NAME_ECO, new DefaultStandardRangeStrategy(StandardProductInput::getEcoProgrammeName)),
-        Map.entry(CbpPropertyType.FINANCING_INSTITUTION_NAME, new DefaultStandardRangeStrategy(StandardProductInput::getFinancingInstitutionName)),
-        Map.entry(CbpPropertyType.PROMISE_VALIDITY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getPromiseValidityPeriod)),
-        Map.entry(CbpPropertyType.PROMISE_COMMISSION_PERCENTAGE, new DefaultStandardRangeStrategy(StandardProductInput::getPromiseCommissionPercentage)),
-        Map.entry(CbpPropertyType.INVESTMENT_CURRENCY, new DefaultStandardRangeStrategy(StandardProductInput::getInvestmentCurrency)),
-        Map.entry(CbpPropertyType.GRANT_CURRENCY, new DefaultStandardRangeStrategy(StandardProductInput::getGrantCurrency)),
-        Map.entry(CbpPropertyType.INVESTMENT_COSTS_CURRENCY, new DefaultStandardRangeStrategy(StandardProductInput::getInvestmentCostsCurrency)),
-        Map.entry(CbpPropertyType.STATUS_APPLYING_FOR_FUNDING, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.PROGRAMME_NAME_UE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.INSTITUTION_NAME_UE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.CHANGE_SCHEDULE_AFTER_REPAID_LOAN_RULE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.SFCS_VERIFICATION_RESULT, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.INVESTMENT_EXCEEDS_BUSINESS_PROFILE, new ExceedsBusinessStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.PROPERTY_TO_RENT, new RentableStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.LTV, new DefaultStandardRangeStrategy(StandardProductInput::getLtv)),
-        Map.entry(CbpPropertyType.LPL_STANDARD, new StandardCheckedStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.REFINANCING_LIABILITIES_NOT_OLDER_THAN, new DefaultStandardRangeStrategy(StandardProductInput::getRefinancingLiabilitiesNotOlderThanInMonths)),
-        Map.entry(CbpPropertyType.SFCS_TYPE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.COMMISSION_COMMITMENT_DAILY_RATIO, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.GRACE_PERIOD_CAPITAL, new DefaultStandardRangeStrategy(StandardProductInput::getGracePeriodCapital)),
-        Map.entry(CbpPropertyType.LFX_PROLONGATION, new DefaultStandardRangeStrategy(StandardProductInput::getLfxProlongation)),
-        Map.entry(CbpPropertyType.INVESTMENT_DETAILED_SUBJECT_TYPE, new InvestmentDetailedSubjectTypeStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.PERCENTAGE_NO_COMMISSION, new CommissionStandardRangeStrategy(N0, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.EARLY_REPAYMENT, new CommissionStandardRangeStrategy(CommissionType.EARLY_REPAYMENT, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.FINANCING_PURPOSE, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.EXPERT_PATH_DESCRIPTION, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.AOU_NUMBER_OF_RENEWALS, new AouNumberOfRenewalsStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.GUARANTEE_TYPES, new DefaultStandardRangeStrategy(StandardProductInput::getGuaranteeTypes)),
-        Map.entry(CbpPropertyType.OTHER_GUARANTEE_CURRENCIES, new DefaultStandardRangeStrategy(StandardProductInput::getAllGuaranteeCurrencies)),
-        Map.entry(CbpPropertyType.REFERENCE_RATE, new DefaultStandardRangeStrategy(StandardProductInput::getReferenceRate)),
-        Map.entry(CbpPropertyType.INTEREST_PAY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getInterestPayPeriod)),
-        Map.entry(CbpPropertyType.PAYMENT_PERIOD_TYPE, new PaymentPeriodStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.PERCENTAGE_BALLOON_PAYMENT, new BalloonPaymentValidStandardRangeStrategy(StandardProductInput::getAmountForBalloonPayment)),
-        Map.entry(CbpPropertyType.FINANCING_SUBJECT_TYPE, new FinancingSubjectTypeStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.REPAYMENT_FINANCING_PURPOSE, new RepaymentFinancingPurposeStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.CUSTOMER_CONTRIBUTION_PROVIDING_METHOD, new CustomerContributionProvidingMethodStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.CUSTOMER_CONTRIBUTION_PERCENTAGE, new CustomerContributionPercentageStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.MONTHLY_INFLOW_COMMISSION, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.FAILURE_MONTHLY_RECEIPTS, new CommissionStandardRangeStrategy(CommissionType.FAILURE_MONTHLY_RECEIPTS, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_PREFERRED_LEASING_SUBJECT, new ShareStandardRangeStrategy(PREFERRED)),
-        Map.entry(CbpPropertyType.PERCENTAGE_NOT_STANDARD_LEASING_SUBJECT, new ShareStandardRangeStrategy(NOT_STANDARD)),
-        Map.entry(CbpPropertyType.PERCENTAGE_STANDARD_LEASING_SUBJECT, new ShareStandardRangeStrategy(STANDARD)),
-        Map.entry(CbpPropertyType.FX_LIMIT_FINANCING_PURPOSE, new FxLimitFinancingPurposesStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.LIMIT_AMOUNT, new DefaultStandardRangeStrategy(StandardProductInput::getLimitAmount)),
-        Map.entry(CbpPropertyType.LIMIT_AGREEMENT_LENGTH, new DefaultStandardRangeStrategy(StandardProductInput::getMaximumAgreementLength)),
-        Map.entry(CbpPropertyType.CURRENCY_PAIR, new FxLimitCurrencyPairStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.CURRENCY_NOMINAL, new EmptyResultStandardRangeStrategy()),
-        Map.entry(CbpPropertyType.MAX_TRANSACTION_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getMaximumTransactionPeriod)),
-        Map.entry(CbpPropertyType.UNKNOWN, new EmptyResultStandardRangeStrategy())
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.Arrays;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+class CbpPropertyTypeStrategiesTest {
+
+    @Test
+    void allEnumValuesShouldHaveStrategy() {
+        // Get all enum values
+        Set<CbpPropertyType> allEnumValues = Arrays.stream(CbpPropertyType.values())
+                .collect(Collectors.toSet());
+        
+        // Get all keys from the strategy map
+        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
+        Set<CbpPropertyType> allStrategyKeys = strategyMap.keySet();
+        
+        // Check if every enum value has a strategy in the map
+        Set<CbpPropertyType> missingStrategies = allEnumValues.stream()
+                .filter(enumValue -> !allStrategyKeys.contains(enumValue))
+                .collect(Collectors.toSet());
+        
+        // Assert that there are no missing strategies
+        assertTrue(
+            missingStrategies.isEmpty(), 
+            "The following CbpPropertyType values are missing from the strategy map: " + missingStrategies
+        );
+    }
+    
+    @Test
+    void strategiesShouldNotBeNull() {
+        // Get the strategy map
+        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
+        
+        // Check for null strategies
+        Set<CbpPropertyType> nullStrategies = strategyMap.entrySet().stream()
+                .filter(entry -> entry.getValue() == null)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
+        
+        // Assert that there are no null strategies
+        assertTrue(
+            nullStrategies.isEmpty(), 
+            "The following CbpPropertyType values have null strategies: " + nullStrategies
+        );
+    }
+    
+    @Test
+    void noExtraStrategiesInMap() {
+        // Get all enum values
+        Set<CbpPropertyType> allEnumValues = Arrays.stream(CbpPropertyType.values())
+                .collect(Collectors.toSet());
+        
+        // Get all keys from the strategy map
+        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
+        Set<CbpPropertyType> allStrategyKeys = strategyMap.keySet();
+        
+        // Check if there are any keys in the map that don't correspond to enum values
+        Set<CbpPropertyType> extraStrategies = allStrategyKeys.stream()
+                .filter(key -> !allEnumValues.contains(key))
+                .collect(Collectors.toSet());
+        
+        // Assert that there are no extra strategies
+        assertTrue(
+            extraStrategies.isEmpty(), 
+            "The following keys in the strategy map don't correspond to any CbpPropertyType: " + extraStrategies
+        );
+    }
+    
+    @Test
+    void getStrategyMethodShouldReturnCorrectStrategy() {
+        // Test a few specific cases to ensure getStrategy returns the expected strategy
+        StandardRangeCheckStrategy marginStrategy = CbpPropertyType.MARGIN.getStrategy();
+        assertNotNull(marginStrategy, "Strategy for MARGIN should not be null");
+        assertTrue(marginStrategy instanceof EmptyResultStandardRangeStrategy, 
+                "MARGIN should have an EmptyResultStandardRangeStrategy");
+        
+        StandardRangeCheckStrategy ltvsStrategy = CbpPropertyType.LTV.getStrategy();
+        assertNotNull(ltvsStrategy, "Strategy for LTV should not be null");
+        assertTrue(ltvsStrategy instanceof DefaultStandardRangeStrategy, 
+                "LTV should have a DefaultStandardRangeStrategy");
+    }
+}
