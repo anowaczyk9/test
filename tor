@@ -1,86 +1,33 @@
-import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-class CbpPropertyTypeStrategiesTest {
-
-    @Test
-    void allEnumValuesShouldHaveStrategy() {
-        // Get all enum values
-        Set<CbpPropertyType> allEnumValues = Arrays.stream(CbpPropertyType.values())
-                .collect(Collectors.toSet());
+rivate static final Map<CbpPropertyType, StandardRangeCheckStrategy> COMMISSION_STRATEGY_MAP = Map.ofEntries(
+        // Currency related strategies
+        Map.entry(CbpPropertyType.CURRENCY, new DefaultStandardRangeStrategy(StandardProductInput::getCurrency)),
         
-        // Get all keys from the strategy map
-        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
-        Set<CbpPropertyType> allStrategyKeys = strategyMap.keySet();
+        // Guarantee related strategies
+        Map.entry(CbpPropertyType.MAX_GUARANTEE_VALIDITY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getMaxGuaranteeValidityPeriod)),
+        Map.entry(CbpPropertyType.AVAILABILITY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getAvailabilityPeriod)),
+        Map.entry(CbpPropertyType.FINANCING_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getFinancingPeriod)),
         
-        // Check if every enum value has a strategy in the map
-        Set<CbpPropertyType> missingStrategies = allEnumValues.stream()
-                .filter(enumValue -> !allStrategyKeys.contains(enumValue))
-                .collect(Collectors.toSet());
+        // Guarantee commission strategies for different currencies
+        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.PLN, GUARANTEE)),
+        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION_EUR, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.EUR, GUARANTEE)),
+        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION_USD, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.USD, GUARANTEE)),
+        Map.entry(CbpPropertyType.GUARANTEE_COMMISSION_FREQUENCY, new CommissionFrequencyStandardRangeStrategy(GUARANTEE)),
         
-        // Assert that there are no missing strategies
-        assertTrue(
-            missingStrategies.isEmpty(), 
-            "The following CbpPropertyType values are missing from the strategy map: " + missingStrategies
-        );
-    }
-    
-    @Test
-    void strategiesShouldNotBeNull() {
-        // Get the strategy map
-        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
+        // Percentage commission strategies
+        Map.entry(CbpPropertyType.PERCENTAGE_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(GUARANTEE, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.PERCENTAGE_PREPARATORY_COMMISSION, new CommissionStandardRangeStrategy(PREPARATORY, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.PERCENTAGE_COMMITMENT_COMMISSION, new CommissionStandardRangeStrategy(COMMITMENT, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.PERCENTAGE_CREDIT_MANAGEMENT_COMMISSION, new CommissionStandardRangeStrategy(CREDIT_MANAGEMENT, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.PERCENTAGE_LETTER_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(LETTER_GUARANTEE, CommissionData::getPercentage)),
         
-        // Check for null strategies
-        Set<CbpPropertyType> nullStrategies = strategyMap.entrySet().stream()
-                .filter(entry -> entry.getValue() == null)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
+        // Min amount commission strategies
+        Map.entry(CbpPropertyType.MIN_AMOUNT_LETTER_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(LETTER_GUARANTEE, CommissionData::getMinAmount)),
+        Map.entry(CbpPropertyType.PERCENTAGE_PAYMENT_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(PAYMENT_GUARANTEE, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.MIN_AMOUNT_PAYMENT_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(PAYMENT_GUARANTEE, CommissionData::getMinAmount)),
         
-        // Assert that there are no null strategies
-        assertTrue(
-            nullStrategies.isEmpty(), 
-            "The following CbpPropertyType values have null strategies: " + nullStrategies
-        );
-    }
-    
-    @Test
-    void noExtraStrategiesInMap() {
-        // Get all enum values
-        Set<CbpPropertyType> allEnumValues = Arrays.stream(CbpPropertyType.values())
-                .collect(Collectors.toSet());
-        
-        // Get all keys from the strategy map
-        Map<CbpPropertyType, StandardRangeCheckStrategy> strategyMap = CbpPropertyType.getAllStrategies();
-        Set<CbpPropertyType> allStrategyKeys = strategyMap.keySet();
-        
-        // Check if there are any keys in the map that don't correspond to enum values
-        Set<CbpPropertyType> extraStrategies = allStrategyKeys.stream()
-                .filter(key -> !allEnumValues.contains(key))
-                .collect(Collectors.toSet());
-        
-        // Assert that there are no extra strategies
-        assertTrue(
-            extraStrategies.isEmpty(), 
-            "The following keys in the strategy map don't correspond to any CbpPropertyType: " + extraStrategies
-        );
-    }
-    
-    @Test
-    void getStrategyMethodShouldReturnCorrectStrategy() {
-        // Test a few specific cases to ensure getStrategy returns the expected strategy
-        StandardRangeCheckStrategy marginStrategy = CbpPropertyType.MARGIN.getStrategy();
-        assertNotNull(marginStrategy, "Strategy for MARGIN should not be null");
-        assertTrue(marginStrategy instanceof EmptyResultStandardRangeStrategy, 
-                "MARGIN should have an EmptyResultStandardRangeStrategy");
-        
-        StandardRangeCheckStrategy ltvsStrategy = CbpPropertyType.LTV.getStrategy();
-        assertNotNull(ltvsStrategy, "Strategy for LTV should not be null");
-        assertTrue(ltvsStrategy instanceof DefaultStandardRangeStrategy, 
-                "LTV should have a DefaultStandardRangeStrategy");
-    }
-}
+        // Non-guarantee commission strategies
+        Map.entry(CbpPropertyType.PERCENTAGE_NON_COMMISSION, new CommissionStandardRangeStrategy(N0, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.PERCENTAGE_EARLY_REPAYMENT_DEPRECATED, new CommissionStandardRangeStrategy(N0, CommissionData::getPercentage)),
+        Map.entry(CbpPropertyType.EARLY_REPAYMENT, new CommissionStandardRangeStrategy(
+                CommissionType.EARLY_REPAYMENT, CommissionData::getPercentage))
+    );
