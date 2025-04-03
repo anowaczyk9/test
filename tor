@@ -1,34 +1,12 @@
- public static RelationDetails createRelations(Long productId,
-                                               Long renewedProductId,
-                                               Long modifiedProductId,
-                                               Long resignedProductId,
-                                               Long activatedProductId) {
-        // Create a set of ProductRelationSnapshot objects
-        Set<ProductRelationSnapshot> relationSnapshots = new HashSet<>();
-        
-        // Add each relationship if ID exists
-        if (renewedProductId != null) {
-            relationSnapshots.add(createSnapshot(productId, renewedProductId, ProductsRelationType.RENEWAL));
-        }
-        
-        if (modifiedProductId != null) {
-            relationSnapshots.add(createSnapshot(productId, modifiedProductId, ProductsRelationType.MODIFICATION));
-        }
-        
-        if (resignedProductId != null) {
-            relationSnapshots.add(createSnapshot(productId, resignedProductId, ProductsRelationType.RESIGNATION));
-        }
-        
-        if (activatedProductId != null) {
-            relationSnapshots.add(createSnapshot(productId, activatedProductId, ProductsRelationType.ACTIVATION));
-        }
-        
-        // Only create a RelationDetails if we have snapshots
-        if (relationSnapshots.isEmpty()) {
-            return null;
-        }
-        
-        // Return a single RelationDetails with all snapshots
-        return new SimpleRelationDetailsImpl(productId, relationSnapshots);
+private static ProductRelationSnapshot createSnapshot(Long sourceId, Long targetId, ProductsRelationType relationType) {
+        return ProductRelationsSnapshot.builder()
+            .productId(sourceId)
+            .relations(Set.of(
+                ProductRelationSnapshot.builder()
+                    .relationType(relationType)
+                    .sourceId(sourceId)
+                    .targetId(targetId)
+                    .build()
+            ))
+            .build();
     }
-    
