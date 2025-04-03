@@ -1,33 +1,34 @@
-rivate static final Map<CbpPropertyType, StandardRangeCheckStrategy> COMMISSION_STRATEGY_MAP = Map.ofEntries(
-        // Currency related strategies
-        Map.entry(CbpPropertyType.CURRENCY, new DefaultStandardRangeStrategy(StandardProductInput::getCurrency)),
+ public static RelationDetails createRelations(Long productId,
+                                               Long renewedProductId,
+                                               Long modifiedProductId,
+                                               Long resignedProductId,
+                                               Long activatedProductId) {
+        // Create a set of ProductRelationSnapshot objects
+        Set<ProductRelationSnapshot> relationSnapshots = new HashSet<>();
         
-        // Guarantee related strategies
-        Map.entry(CbpPropertyType.MAX_GUARANTEE_VALIDITY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getMaxGuaranteeValidityPeriod)),
-        Map.entry(CbpPropertyType.AVAILABILITY_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getAvailabilityPeriod)),
-        Map.entry(CbpPropertyType.FINANCING_PERIOD, new DefaultStandardRangeStrategy(StandardProductInput::getFinancingPeriod)),
+        // Add each relationship if ID exists
+        if (renewedProductId != null) {
+            relationSnapshots.add(createSnapshot(productId, renewedProductId, ProductsRelationType.RENEWAL));
+        }
         
-        // Guarantee commission strategies for different currencies
-        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.PLN, GUARANTEE)),
-        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION_EUR, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.EUR, GUARANTEE)),
-        Map.entry(CbpPropertyType.MIN_AMOUNT_GUARANTEE_COMMISSION_USD, new GuaranteeCommissionMinAmountStandardRangeStrategy(Currency.USD, GUARANTEE)),
-        Map.entry(CbpPropertyType.GUARANTEE_COMMISSION_FREQUENCY, new CommissionFrequencyStandardRangeStrategy(GUARANTEE)),
+        if (modifiedProductId != null) {
+            relationSnapshots.add(createSnapshot(productId, modifiedProductId, ProductsRelationType.MODIFICATION));
+        }
         
-        // Percentage commission strategies
-        Map.entry(CbpPropertyType.PERCENTAGE_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(GUARANTEE, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_PREPARATORY_COMMISSION, new CommissionStandardRangeStrategy(PREPARATORY, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_COMMITMENT_COMMISSION, new CommissionStandardRangeStrategy(COMMITMENT, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_CREDIT_MANAGEMENT_COMMISSION, new CommissionStandardRangeStrategy(CREDIT_MANAGEMENT, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_LETTER_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(LETTER_GUARANTEE, CommissionData::getPercentage)),
+        if (resignedProductId != null) {
+            relationSnapshots.add(createSnapshot(productId, resignedProductId, ProductsRelationType.RESIGNATION));
+        }
         
-        // Min amount commission strategies
-        Map.entry(CbpPropertyType.MIN_AMOUNT_LETTER_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(LETTER_GUARANTEE, CommissionData::getMinAmount)),
-        Map.entry(CbpPropertyType.PERCENTAGE_PAYMENT_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(PAYMENT_GUARANTEE, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.MIN_AMOUNT_PAYMENT_GUARANTEE_COMMISSION, new CommissionStandardRangeStrategy(PAYMENT_GUARANTEE, CommissionData::getMinAmount)),
+        if (activatedProductId != null) {
+            relationSnapshots.add(createSnapshot(productId, activatedProductId, ProductsRelationType.ACTIVATION));
+        }
         
-        // Non-guarantee commission strategies
-        Map.entry(CbpPropertyType.PERCENTAGE_NON_COMMISSION, new CommissionStandardRangeStrategy(N0, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.PERCENTAGE_EARLY_REPAYMENT_DEPRECATED, new CommissionStandardRangeStrategy(N0, CommissionData::getPercentage)),
-        Map.entry(CbpPropertyType.EARLY_REPAYMENT, new CommissionStandardRangeStrategy(
-                CommissionType.EARLY_REPAYMENT, CommissionData::getPercentage))
-    );
+        // Only create a RelationDetails if we have snapshots
+        if (relationSnapshots.isEmpty()) {
+            return null;
+        }
+        
+        // Return a single RelationDetails with all snapshots
+        return new SimpleRelationDetailsImpl(productId, relationSnapshots);
+    }
+    
