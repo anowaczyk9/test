@@ -1,12 +1,227 @@
-private static ProductRelationSnapshot createSnapshot(Long sourceId, Long targetId, ProductsRelationType relationType) {
-        return ProductRelationsSnapshot.builder()
-            .productId(sourceId)
-            .relations(Set.of(
-                ProductRelationSnapshot.builder()
-                    .relationType(relationType)
-                    .sourceId(sourceId)
-                    .targetId(targetId)
-                    .build()
-            ))
-            .build();
+class DefaultProductRepositoryTest {
+
+    // Metoda pomocnicza do przygotowania podstawowego produktu
+    private BaseProductData prepareTestProduct(Long productId) {
+        BaseProductData product = inLimitForBehavioursTests();
+        ReflectionTestUtils.setField(product, "id", productId);
+        product.setMisProduct(true);
+        product.setCreatedInClp(false);
+        return product;
     }
+    
+    // Metoda pomocnicza do konfiguracji mocka saveAndFlush
+    private void mockSaveAndFlush(Long newId) {
+        given(defaultCommandRepository.saveAndFlush(any(BaseProductData.class)))
+            .willAnswer(invocation -> {
+                BaseProductData product = invocation.getArgument(0, BaseProductData.class);
+                ReflectionTestUtils.setField(product, "id", newId);
+                return product;
+            });
+    }
+
+    @Test
+    void shouldHandleRelationForRejection() {
+        // given
+        Long rejectedProductId = 1L;
+        Set<RelationDetails> rejectedRelation = 
+            RelationDetailsFactory.sampleTestRelation(rejectedProductId, null);
+        BaseProductData rejectedProduct = prepareTestProduct(rejectedProductId);
+        
+        given(defaultQueryRepository.findAllById(any())).willReturn(List.of(rejectedProduct));
+        given(productRelationsApi.handleRelations(any(ProductRelationsRejectedCommand.class)))
+            .willReturn(rejectedRelation);
+        
+        // when
+        defaultProductRepository.reject(Set.of(rejectedProductId));
+        
+        // then
+        assertEquals(extractProductRelationDetails(rejectedProductId, rejectedRelation), 
+                     rejectedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationDeletion() {
+        // given
+        Long deletedId = 1L;
+        Set<RelationDetails> deleteRelation = 
+            RelationDetailsFactory.sampleTestRelation(deletedId, null);
+        BaseProductData deletedProduct = prepareTestProduct(deletedId);
+        
+        given(defaultQueryRepository.findById(deletedId)).willReturn(Optional.of(deletedProduct));
+        given(productRelationsApi.handleRelations(any(ProductRelationsDeletedCommand.class)))
+            .willReturn(deleteRelation);
+        
+        // when
+        defaultProductRepository.delete(deletedId);
+        
+        // then
+        assertEquals(extractProductRelationDetails(deletedId, deleteRelation), 
+                     deletedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForCancel() {
+        // given
+        Long canceledProductId = 1L;
+        Set<RelationDetails> cancelRelation = 
+            RelationDetailsFactory.sampleTestRelation(canceledProductId, null);
+        BaseProductData canceledProduct = prepareTestProduct(canceledProductId);
+        
+        given(defaultQueryRepository.findById(canceledProductId)).willReturn(Optional.of(canceledProduct));
+        given(productRelationsApi.handleRelations(any(ProductRelationsCanceledCommand.class)))
+            .willReturn(cancelRelation);
+        
+        // when
+        defaultProductRepository.cancel(canceledProductId);
+        
+        // then
+        assertEquals(extractProductRelationDetails(canceledProductId, cancelRelation), 
+                     canceledProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForResignation() {
+        // given
+        Long resignedId = 1L;
+        Long resignationId = 2L;
+        Set<RelationDetails> resignationRelation = 
+            RelationDetailsFactory.createResignationRelation(resignationId, resignedId);
+        InterestRateLimit resignedProduct = prepareTestProduct(resignedId);
+        resignedProduct.setBusinessProductNumber("23KIN000430/0");
+        
+        given(defaultQueryRepository.findById(resignedId)).willReturn(Optional.of(resignedProduct));
+        mockSaveAndFlush(resignationId);
+        given(productRelationsApi.handleRelations(any(ProductRelationsResignedCommand.class)))
+            .willReturn(resignationRelation);
+        
+        // when
+        defaultProductRepository.resign(resignedId, Instant.now(), 1L);
+        
+        // then
+        assertEquals(extractProductRelationDetails(resignedId, resignationRelation), 
+                     resignedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForModification() {
+        // given
+        Long modifiedId = 1L;
+        Long modificationId = 2L;
+        Set<RelationDetails> modificationRelation = 
+            RelationDetailsFactory.createModificationRelation(modificationId, modifiedId);
+        FinancingInvestmentLoan modifiedProduct = FinancingInvestmentLoanCreator.builder()
+            .defaultValues()
+            .id(modifiedId)
+            .businessProductNumber("23KIN000430/0")
+            .misProduct(true)
+            .createdInClp(false)
+            .build();
+        
+        given(defaultQueryRepository.findById(modifiedId)).willReturn(Optional.of(modifiedProduct));
+        mockSaveAndFlush(modificationId);
+        given(productRelationsApi.handleRelations(any(ProductRelationsModifiedCommand.class)))
+            .willReturn(modificationRelation);
+        
+        // when
+        defaultProductRepository.modify(modifiedId, 1L, null);
+        
+        // then
+        assertEquals(extractProductRelationDetails(modifiedId, modificationRelation), 
+                     modifiedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForRenewal() {
+        // given
+        Long renewedId = 1L;
+        Long renewalId = 2L;
+        Set<RelationDetails> renewalRelation = 
+            RelationDetailsFactory.createRenewalRelation(renewalId, renewedId);
+        Overdraft renewedProduct = OverdraftCreator.builder()
+            .defaultValues()
+            .id(renewedId)
+            .businessProductNumber("23KIN000430/0")
+            .misProduct(true)
+            .createdInClp(false)
+            .build();
+        ProductConfiguration config = Mockito.mock(ProductConfiguration.class);
+        
+        given(defaultQueryRepository.findById(renewedId)).willReturn(Optional.of(renewedProduct));
+        mockSaveAndFlush(renewalId);
+        given(productRelationsApi.handleRelations(any(ProductRelationsRenewedCommand.class)))
+            .willReturn(renewalRelation);
+        given(config.getConfig())
+            .willReturn(new ProductConfigDto());
+        
+        // when
+        defaultProductRepository.renew(renewedId, null, config, 1L);
+        
+        // then
+        assertEquals(extractProductRelationDetails(renewedId, renewalRelation), 
+                     renewedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForActivation() {
+        // given
+        Long activatedId = 1L;
+        Long activationId = 2L;
+        Set<RelationDetails> activationRelation = 
+            RelationDetailsFactory.createActivationRelation(activationId, activatedId);
+        InterestRateLimit activatedProduct = prepareTestProduct(activatedId);
+        activatedProduct.setBusinessProductNumber("23KIN000430/0");
+        
+        given(defaultQueryRepository.findById(activatedId)).willReturn(Optional.of(activatedProduct));
+        mockSaveAndFlush(activationId);
+        given(productRelationsApi.handleRelations(any(ProductRelationsActivatedCommand.class)))
+            .willReturn(activationRelation);
+        
+        // when
+        defaultProductRepository.activate(activatedId, 1L, null);
+        
+        // then
+        assertEquals(extractProductRelationDetails(activatedId, activationRelation), 
+                     activatedProduct.getRelationDetails());
+    }
+    
+    @Test
+    void shouldHandleRelationForCreation() {
+        // given
+        Long absorbed = 1L;
+        Long created = 2L;
+        List<ProductRelationDto> absorptionRelationDtos = 
+            RelationDetailsFactory.sampleAbsorptionRelation(created, List.of(absorbed));
+        DefaultProductDataForm form = Mockito.mock(DefaultProductDataForm.class);
+        Set<RelationDetails> absorptionRelation = 
+            RelationDetailsFactory.sampleTestRelation(created, absorbed);
+        FinancingInvestmentLoan createdProduct = FinancingInvestmentLoanCreator.builder()
+            .defaultValues()
+            .id(created)
+            .businessProductNumber("23KIN000430/0")
+            .misProduct(true)
+            .createdInClp(false)
+            .build();
+        
+        given(form.getProductRelations()).willReturn(absorptionRelationDtos);
+        given(form.getType()).willReturn(FINANCING_INVESTMENT_LOAN);
+        given(defaultProductFactory.createProductInstance(any())).willReturn(createdProduct);
+        mockSaveAndFlush(created);
+        given(productRelationsApi.handleRelations(any(ProductRelationsCreatedCommand.class)))
+            .willReturn(absorptionRelation);
+        Mockito.doNothing().when(productRelationFace).saveNewProductRelations(any());
+        
+        // when
+        defaultProductRepository.save(form);
+        
+        // then
+        assertEquals(extractProductRelationDetails(created, absorptionRelation), 
+                     createdProduct.getRelationDetails());
+    }
+    
+    private RelationDetails extractProductRelationDetails(Long productId, Set<RelationDetails> relationDetails) {
+        return relationDetails.stream()
+            .filter(relation -> relation.getProductId().equals(productId))
+            .findFirst()
+            .orElse(null);
+    }
+}
