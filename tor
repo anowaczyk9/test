@@ -1,190 +1,65 @@
+package com.example;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.HashSet;
-import java.util.Set;
+class ProductDecisionEngineTest {
 
-class ProductRelationDtoTest {
+    private final ProductDecisionEngine decisionEngine = new ProductDecisionEngine();
 
-    @Test
-    void testMapFromProductRelationSnapshot_FiltersUnsupportedRelationTypes() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(
-                1L, 
-                createRelationSnapshot(1L, 101L, ProductsRelationType.LAUNCHED),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.SOME_UNSUPPORTED_TYPE)
-            )
-        );
-        
-        // When
-        Set<ProductRelationDto> result = ProductRelationDto.mapFromProductRelationSnapshot(newRelations.iterator().next());
-        
-        // Then
-        assertEquals(1, result.size());
-        
-        // Verify that only LAUNCHED relation is in the result
-        ProductRelationDto dto = result.iterator().next();
-        assertEquals(1L, dto.getSourceId());
-        assertEquals(101L, dto.getTargetId());
-        assertEquals(ProductRelationType.LAUNCHED, dto.getType());
-    }
-    
-    @Test
-    void testMapFromProductRelationSnapshot_ConvertsCorrectionToModification() {
-        // Given
-        ProductRelationSnapshot relation = createRelationSnapshot(10L, 20L, ProductsRelationType.CORRECTION);
-        
-        // When
-        ProductRelationDto result = ProductRelationDto.mapFromProductRelationSnapshot(relation);
-        
-        // Then
-        assertEquals(ProductRelationType.MODIFICATION, result.getType());
-        assertEquals(10L, result.getSourceId());
-        assertEquals(20L, result.getTargetId());
-    }
-    
-    @Test
-    void testMapFromProductRelationSnapshot_KeepsNonCorrectionTypesUnchanged() {
-        // Given
-        ProductRelationSnapshot launchedRelation = createRelationSnapshot(100L, 200L, ProductsRelationType.LAUNCHED);
-        ProductRelationSnapshot modificationRelation = createRelationSnapshot(300L, 400L, ProductsRelationType.MODIFICATION);
-        
-        // When
-        ProductRelationDto launchedResult = ProductRelationDto.mapFromProductRelationSnapshot(launchedRelation);
-        ProductRelationDto modificationResult = ProductRelationDto.mapFromProductRelationSnapshot(modificationRelation);
-        
-        // Then
-        assertEquals(ProductRelationType.LAUNCHED, launchedResult.getType());
-        assertEquals(ProductRelationType.MODIFICATION, modificationResult.getType());
-    }
-    
-    @Test
-    void testMapFromProductRelationSnapshot_CompleteScenario() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(
-                1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.LAUNCH_ORDER),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.CORRECTION)
-            ),
-            createProductRelationsSnapshot(
-                2L,
-                createRelationSnapshot(2L, 103L, ProductsRelationType.LAUNCHED),
-                createRelationSnapshot(2L, 104L, ProductsRelationType.SOME_OTHER_TYPE)
-            )
-        );
-        
-        Set<ProductRelationDto> results = new HashSet<>();
-        for (ProductRelationsSnapshot snapshot : newRelations) {
-            results.addAll(ProductRelationDto.mapFromProductRelationSnapshot(snapshot));
+    @Nested
+    @DisplayName("isEligibleForPositiveDecision(...) Tests")
+    class IsEligibleForPositiveDecisionTests {
+
+        @Test
+        @DisplayName("Should return false when field type is overdue")
+        void shouldReturnFalseWhenFieldTypeIsOverdue() {
+            // Arrange
+            String overdueField = "FIELD_TYPE_OVERDUE";
+            boolean paymentDatePassed = false;
+
+            // Act
+            boolean result = decisionEngine.isEligibleForPositiveDecision(overdueField, paymentDatePassed);
+
+            // Assert
+            // Using AssertJ for expressive assertions
+            assertThat(result)
+                .as("When the field is overdue, eligibility should be false.")
+                .isFalse();
         }
-        
-        // Then
-        // Should contain only supported types (3 items) and CORRECTION should be converted to MODIFICATION
-        assertEquals(3, results.size());
-        
-        // Collect the types in the results for easier verification
-        Set<ProductRelationType> resultTypes = new HashSet<>();
-        Set<Long> sourceIds = new HashSet<>();
-        
-        for (ProductRelationDto dto : results) {
-            resultTypes.add(dto.getType());
-            sourceIds.add(dto.getSourceId());
+
+        @Test
+        @DisplayName("Should return false when payment date has passed")
+        void shouldReturnFalseWhenPaymentDatePassed() {
+            // Arrange
+            String normalField = "NORMAL_FIELD";
+            boolean paymentDatePassed = true;
+
+            // Act
+            boolean result = decisionEngine.isEligibleForPositiveDecision(normalField, paymentDatePassed);
+
+            // Assert
+            assertThat(result)
+                .as("When the payment date has passed, eligibility should be false.")
+                .isFalse();
         }
-        
-        // Verify CORRECTION was converted to MODIFICATION
-        assertTrue(resultTypes.contains(ProductRelationType.MODIFICATION));
-        assertTrue(resultTypes.contains(ProductRelationType.LAUNCH_ORDER));
-        assertTrue(resultTypes.contains(ProductRelationType.LAUNCHED));
-        assertFalse(resultTypes.contains(ProductRelationType.CORRECTION));
-        assertFalse(resultTypes.contains(ProductRelationType.SOME_OTHER_TYPE));
-        
-        // Verify source IDs are present
-        assertTrue(sourceIds.contains(1L));
-        assertTrue(sourceIds.contains(2L));
-    }
-    
-    @Test
-    void shouldFilterOutLaunchOrderAndLaunchedRelations() {
-        // Given
-        Set<ProductRelationsSnapshot> newRelations = Set.of(
-            createProductRelationsSnapshot(
-                1L,
-                createRelationSnapshot(1L, 101L, ProductsRelationType.MODIFICATION),
-                createRelationSnapshot(1L, 102L, ProductsRelationType.RENEWAL)
-            ),
-            createProductRelationsSnapshot(
-                2L,
-                createRelationSnapshot(2L, 103L, ProductsRelationType.RESIGNATION),
-                createRelationSnapshot(2L, 104L, ProductsRelationType.ACTIVATION)
-            ),
-            createProductRelationsSnapshot(
-                3L,
-                createRelationSnapshot(3L, 105L, ProductsRelationType.ABSORPTION),
-                createRelationSnapshot(3L, 106L, ProductsRelationType.REFINANCING),
-                createRelationSnapshot(3L, 108L, ProductsRelationType.LAUNCH_ORDER),
-                createRelationSnapshot(3L, 109L, ProductsRelationType.LAUNCHED)
-            )
-        );
-        
-        Set<ProductRelationDto> legacyRelations = Set.of(
-            createRelationDto(1L, 101L, ProductRelationType.MODIFICATION),
-            createRelationDto(1L, 102L, ProductRelationType.RENEWAL),
-            createRelationDto(2L, 103L, ProductRelationType.RESIGNATION),
-            createRelationDto(2L, 104L, ProductRelationType.ACTIVATION),
-            createRelationDto(3L, 105L, ProductRelationType.ABSORPTION),
-            createRelationDto(3L, 106L, ProductRelationType.REFINANCING)
-        );
-        
-        Set<Long> productIds = Set.of(1L, 2L, 3L);
-        
-        // When
-        boolean result = ProductRelationComparator.compareWithNewRelations(newRelations, legacyRelations, productIds);
-        
-        // Then
-        assertTrue(result, "Relations should be equal after filtering out LAUNCH_ORDER and LAUNCHED relations");
-    }
-    
-    // Helper methods to create test objects
-    private ProductRelationsSnapshot createProductRelationsSnapshot(Long productId, ProductRelationSnapshot... relations) {
-        return new ProductRelationsSnapshot() {
-            @Override
-            public Long getProductId() {
-                return productId;
-            }
-            
-            @Override
-            public Set<ProductRelationSnapshot> getRelations() {
-                return Set.of(relations);
-            }
-        };
-    }
-    
-    private ProductRelationSnapshot createRelationSnapshot(Long sourceId, Long targetId, ProductsRelationType type) {
-        return new ProductRelationSnapshot() {
-            @Override
-            public Long getSourceId() {
-                return sourceId;
-            }
-            
-            @Override
-            public Long getTargetId() {
-                return targetId;
-            }
-            
-            @Override
-            public ProductsRelationType getRelationType() {
-                return type;
-            }
-        };
-    }
-    
-    private ProductRelationDto createRelationDto(Long sourceId, Long targetId, ProductRelationType type) {
-        return ProductRelationDto.builder()
-            .sourceId(sourceId)
-            .targetId(targetId)
-            .type(type)
-            .build();
+
+        @Test
+        @DisplayName("Should return true when field is not overdue and payment date has not passed")
+        void shouldReturnTrueWhenFieldIsNormalAndPaymentDateNotPassed() {
+            // Arrange
+            String normalField = "NORMAL_FIELD";
+            boolean paymentDatePassed = false;
+
+            // Act
+            boolean result = decisionEngine.isEligibleForPositiveDecision(normalField, paymentDatePassed);
+
+            // Assert
+            assertThat(result)
+                .as("When the field is normal and payment date not passed, eligibility should be true.")
+                .isTrue();
+        }
     }
 }
