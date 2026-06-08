@@ -1,0 +1,17 @@
+Przygotowujemy migrację do human code review przed pushem. Zanim zaplanujemy reorganizację commitów i mapę zmian, potrzebuję inwentarza — nie zmieniaj jeszcze niczego, tylko pokaż:
+
+1. Pełny log commitów migracji (git log --oneline) od punktu rozgałęzienia do HEAD — wszystkie ~30, z datami. Chcę zobaczyć, które to false-starty/iteracje (do squashu) a które logiczne jednostki.
+
+2. Klasyfikacja całego diffu (git diff --stat od base do HEAD) w cztery wiadra — dla każdego pliku powiedz, do którego należy:
+- PROD: zmiany produkcyjne pl.santander.vas (POM, package moves, Jackson bridge, config lever, OpenRewrite/Swagger swap)
+- TEST: safety net (ITy, fixtury, capture tests jeśli zostały)
+- CONTEXT: folder context/ (scaffolding + provenance + closeout)
+- BUILD/CI: surefire/pom test config, .gitlab-ci.yml
+
+Podaj liczbę plików i linii per wiadro.
+
+3. W wiadrze PROD rozdziel osobno: (a) czysto mechaniczne (package moves, Swagger->OpenAPI annotation swap, wersje w POM) vs (b) behavioral-risk (Jackson bridge bean, use-jackson2-defaults, RabbitMQ @ConditionalOnProperty, hibernate-validator groupId) — to druga grupa, którą recenzent musi przejrzeć najuważniej.
+
+4. Jak repo jest skonfigurowane do merge — squash-merge czy zachowuje commity? (sprawdź konwencję zespołu / ustawienia MR jeśli widoczne)
+
+Tylko inwentarz, zero zmian w historii czy plikach. Na jego podstawie zaplanujemy split commitów, co zostaje a co wypada z pusha, i strukturę mapy zmian.
