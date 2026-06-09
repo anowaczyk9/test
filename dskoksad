@@ -1,28 +1,37 @@
-Mapa zatwierdzona, wykonujemy ekstrakcję context/ — ścieżka squash-merge (zakładam, że squashujesz ten MR). NIE pushuj; pokaż wynik do akceptacji.
+Wykonane zgodnie z planem (bez pusha).
 
-Krok 0 — najpierw zabezpiecz historię:
-git tag migration-full-history HEAD
-(zachowuje pełne 31 commitów + cały context/ + AGENTS.md zanim cokolwiek usuniemy — i jako bezpiecznik, i jako materiał na prezentację)
+ - Utworzony tag bezpieczeństwa: migration-full-history na wcześniejszym HEAD.
+ - Wykonana ekstrakcja + cleanup + commit: - Commit: 7eedb4e4
+ - Message: chore(migration): extract review evidence to docs/review, remove agent scaffolding
 
-Krok 1 — promuj 3 dokumenty dowodowe do review-facing:
-utwórz docs/review/boot4-migration/ i git mv tam:
-- context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md
-- context/foundation/verification-closed.md
-- context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md
+git diff --stat 06689f109a5eeb8266900c3fcb1c68d863632fdb..HEAD
 
-Krok 2 — zapisz finalną mapę jako docs/review/boot4-migration/MIGRATION.md (cały dokument w wersji po ostatnich poprawkach).
+ docs/review/boot4-migration/MIGRATION.md           |  90 ++++
+ docs/review/boot4-migration/baseline-provenance.md | 538 +++++++++++++++++++++
+ docs/review/boot4-migration/compatibility-decisions.md | 133 +++++
+ docs/review/boot4-migration/verification-closed.md |  77 +++
+ ... (prod/test migration diff)
+ 84 files changed, 3522 insertions(+), 360 deletions(-)
 
-Krok 3 — usuń scaffolding:
-git rm -r context/
-git rm AGENTS.md
+W statystyce nie ma context/ ani AGENTS.md (zostały usunięte/przeniesione).
 
-Krok 4 — commit:
-"chore(migration): extract review evidence to docs/review, remove agent scaffolding"
+Drzewo docs/review/boot4-migration/
 
-Krok 5 — weryfikacja (pokaż wyniki):
-- git diff --stat <base 06689f10>..HEAD — potwierdź: zero context/, zero AGENTS.md, obecne 4 pliki w docs/review/boot4-migration/ (3 dowody + MIGRATION.md)
-- mvn package (test profile, jasypt dummy) — potwierdź że gate dalej zielony (usunięcie docs nie rusza testów, ale chcę pewność): 613 testów, BUILD SUCCESS
+ docs/review/boot4-migration/baseline-provenance.md
+ docs/review/boot4-migration/compatibility-decisions.md
+ docs/review/boot4-migration/MIGRATION.md
+ docs/review/boot4-migration/verification-closed.md
 
-Pokaż: git diff --stat base..HEAD, drzewo docs/review/boot4-migration/, wynik mvn package. STOP przed pushem — czekam na akceptację, dopiero potem push + opis MR.
+mvn package (profil test + jasypt dummy)
 
-Jeśli zespół wymaga zachowania commitów (nie squash) — nie odpalaj tego, daj znać, robimy wariant z rebase context/ z historii zamiast pojedynczego commita usuwającego.
+Uruchomione:
+
+ mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package
+
+Wynik:
+
+ [INFO] BUILD SUCCESS
+ [INFO] Tests run: 613, Failures: 0, Errors: 0, Skipped: 9
+ [INFO] Total time: 01:57 min
+
+Zatrzymuję się tutaj przed pushem, zgodnie z Twoją instrukcją.
