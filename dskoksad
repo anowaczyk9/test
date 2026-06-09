@@ -1,163 +1,17 @@
- Świetnie — poniżej draft migration review guide + plan ekstrakcji context/ do akceptacji.
-  Zero zmian w historii i plikach na tym etapie.
+Mapa dobra, sekcje 4-6 zostają. Trzy poprawki, jedna ważna.
 
-  Draft: Migration Review Guide (human code review)
+1. WAŻNE — przerób dowód przy ObjectMapperConfig (bridge bean). Obecne uzasadnienie ("gdyby bridge rozwalał kontrakt, ITy poszłyby na czerwono") jest fałszywe: IT kontraktowe jadą przez webowy HttpMessageConverter -> autokonfigurowany mapper, NIE przez bridge bean. Bridge obsługuje direct-injection callerów (@Autowired ObjectMapper) — osobna ścieżka, której ITy nie dotykają. Nie przypisuj ITom pokrycia, którego nie mają.
+Uczciwa naprawa:
+- wygrepuj w src/main kto wstrzykuje ObjectMapper bezpośrednio (@Autowired/konstruktor), wymień ich
+- porównaj konfigurację bridge'a (moduły, features, date handling) z tym, co Boot 3.5 autokonfigurował (JavaTimeModule, WRITE_DATES_AS_TIMESTAMPS=false itd.). W 3.5 @Autowired ObjectMapper dostawał mapper Boota; bridge ma go zastąpić — pytanie czy 1:1.
+- jeśli bridge matchuje config 3.5 i/lub callerzy trywialni -> to jest dowód, wpisz konkretnie. Jeśli któryś caller serializuje nietrywialnie i nie ma testu -> wpisz "nieudowodnione (direct-injection path nietestowany przez kontraktowe ITy)". Bez udawania pokrycia.
 
-  1) TL;DR + scope
+2. compatibility-decisions.md (pozycja 8 w drop-liście) NIE wypada — to dowód dla pom.xml (rationale pinów: jasypt 3.0.5 vs 4.0.4 wywala Boot 4, wersje). Albo dodaj go jako 3. promowany dokument do docs/review/boot4-migration/, albo wessij kluczowe decyzje pinów do wiersza pom.xml w mapie. Reszta drop-listy OK.
 
-  Scope: migracja platformowa: Spring Boot 3.5.13 → 4.0.6, Spring Cloud, Jackson 2→3 compatibility path.
+3. application-dev.yml: popraw "testowane przez teeth-checki" — suite leci na profilu test, nie dev; dev zweryfikowany przez inspekcję (ta sama linia). Dopisz czemu lever jest w obu plikach (redundancja czy dev nadpisuje?).
 
-  Puenta dla recenzenta: realna zmiana behawioralna jest skupiona w 6 plikach / ~79 linii.
-  Reszta diffu base..HEAD to:
+Dodatkowo dwa zdania do mapy:
+- jednolinijkowa charakteryzacja 33 mechanicznych plików (np. "package moves com.fasterxml.jackson->tools.jackson, Swagger->OpenAPI annotation swap, import churn z wersji — bez zmian logiki") żeby recenzent ufał skanowi
+- jedno zdanie o external/aoc (5) + wksme1 (2): GSON @SerializedName, tylko zmiany importów/package, nietknięte przez migrację Jacksona
 
-   - mechanika migracyjna (package moves, Swagger→OpenAPI, piny/version churn),
-   - safety net testowy (2463 linii),
-   - scaffolding/provenance w context/ (4847 linii) do wycięcia/przeniesienia poza push produkcyjny.
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  2) Behavior-preserving levers (dlaczego ta migracja ma być neutralna)
-
-   1. Global lever: spring.jackson.use-jackson2-defaults: true w application.yml (i dev profile).  
-   2. Jackson bridge bean: ObjectMapperConfig utrzymuje kompatybilny mapper dla komponentów, które wstrzykują ObjectMapper bezpośrednio.  
-   3. Wersje/piny w POM: utrzymanie stabilności runtime/test toolchain zamiast funkcjonalnego rozszerzania.  
-   4. Dowód zamiast deklaracji: kontrakty serializacji są przypięte do baseline Boot 3.5 i porównywane na Boot 4 (nie „Boot4==Boot4”).
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  3) Sześć plików behavioral-risk (z dowodem)
-
-  ┌────────────────────────────────────────────────────────────────────────────────────────────────┬────────────────────────────────────────┬───────────────────────────────────┐
-  │ Plik                                                                                           │ Co zmienia                             │ Dlaczego bezpieczne + dowód       │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/config/ObjectMapperConfig.java                                  │ Jackson bridge bean (ObjectMapper)     │ Dowód pośredni (silny):           │
-  │                                                                                                │                                        │ verification-closed.md sekcja     │
-  │                                                                                                │                                        │ „Serialization vectors” +         │
-  │                                                                                                │                                        │ baseline provenance wskazują, że  │
-  │                                                                                                │                                        │ wektory JSON                      │
-  │                                                                                                │                                        │ (ordering/naming/null/BigDecimal) │
-  │                                                                                                │                                        │ są zgodne z 3.5 na Boot 4. Jeśli  │
-  │                                                                                                │                                        │ bridge/mapper rozwalałby          │
-  │                                                                                                │                                        │ kontrakt, IT kontraktowe poszłyby │
-  │                                                                                                │                                        │ na czerwono.                      │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ src/main/resources/application.yml                                                             │ spring.jackson.use-jackson2-defaults:  │ Dowód: verification-closed.md     │
-  │                                                                                                │ true                                   │ (Serialization vectors + global   │
-  │                                                                                                │                                        │ web mapper lever) + baseline 3.5  │
-  │                                                                                                │                                        │ w baseline-provenance.md          │
-  │                                                                                                │                                        │ (fixtures z worktree 3.5,         │
-  │                                                                                                │                                        │ porównanie byte-equality na Boot  │
-  │                                                                                                │                                        │ 4).                               │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ src/main/resources/application-dev.yml                                                         │ profilowe ustawienie wpływające na ten │ Dowód: jak wyżej; dodatkowo lever │
-  │                                                                                                │ sam lever                              │ jest testowany przez teeth-checki │
-  │                                                                                                │                                        │ opisane w provenance/verification │
-  │                                                                                                │                                        │ (ordering/null/BigDecimal).       │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ pom.xml                                                                                        │ dependency/runtime/test config (w tym  │ Częściowo udowodnione: surefire   │
-  │                                                                                                │ hibernate-validator groupId i surefire │ IT-gate ma twardy, cytowalny      │
-  │                                                                                                │ IT-gate)                               │ rationale w komentarzu pluginu (  │
-  │                                                                                                │                                        │ pom.xml, sekcja surefire).        │
-  │                                                                                                │                                        │ hibernate-validator official      │
-  │                                                                                                │                                        │ rename: nieudowodnione w repo     │
-  │                                                                                                │                                        │ (brak lokalnego źródła upstream   │
-  │                                                                                                │                                        │ do zacytowania).                  │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/dictionaries/mors/adapter/mors/MorsQueueListener.java           │ @ConditionalOnProperty(...,            │ Dowód: adnotacja jawnie ma        │
-  │                                                                                                │ matchIfMissing = true)                 │ matchIfMissing=true, więc brak    │
-  │                                                                                                │                                        │ flagi zachowuje domyślne          │
-  │                                                                                                │                                        │ włączenie (zmiana jest guardem    │
-  │                                                                                                │                                        │ operacyjnym, nie zmianą domyślnej │
-  │                                                                                                │                                        │ ścieżki).                         │
-  ├────────────────────────────────────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼───────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/dictionaries/mors/infrastructure/MorsRabbitMQConnectionConfigur │ analogiczny conditional gate           │ Dowód: jak wyżej —                │
-  │ ation.java                                                                                     │                                        │ matchIfMissing=true, default      │
-  │                                                                                                │                                        │ behavior pozostaje aktywny.       │
-  └────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────┴───────────────────────────────────┘
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  4) Trzy rzeczy do świadomej akceptacji recenzenta
-
-   1. Surefire IT-gate (pom.xml): włącza *IT do przebiegu CI przy mvn package (wcześniej safety net mógł być niewidoczny).  
-   2. Dead @SecureWithTokens: PRE-EXISTING, eskalowane osobno, nie wprowadzone przez migrację (verification-closed.md).  
-   3. Safety net = test-only / zero-prod: testy i fixtury nie zmieniają runtime behavior produkcji; zabezpieczają regresje kontraktów.
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  5) Co zweryfikowane i jak
-
-   - Serialization vectors przypięte do 3.5 baseline (fixtures z worktree 3.5, potem byte-compare na Boot 4) — baseline-provenance.md.
-   - Pokryte: field ordering, naming strategy, records, NON_NULL, enumy, @JsonProperty, BigDecimal trailing zero.
-   - Residuale zaakceptowane:   - SFTP gap jako pre-existing (brak testu do EmbeddedSftpServer),  
-   - Double jako świadomy, stabilny residual serializacyjny — oba opisane w verification-closed.md.
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  6) Jak to recenzować (kolejność)
-
-   1. Behavior-preserving levers (2–3 min, ustawienie mental modelu).  
-   2. 6 plików behavioral-risk (linia po linii, z dowodami z tabeli).  
-   3. Spot-check safety netu: 2–3 reprezentatywne IT (CODE/AOC/Agreements + BigDecimal) + provenance.  
-   4. Na końcu zaakceptować 3 świadome decyzje (IT gate, pre-existing @SecureWithTokens, test-only nature).
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Plan ekstrakcji context/ (propozycja, NIE wykonywane teraz)
-
-  A) Przenieść do review-facing (zachować w pushu, ale poza context/)
-
-  Proponowany target katalog: docs/review/boot4-migration/
-
-   1. context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md
-   2. context/foundation/verification-closed.md
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  B) Wypadają z pusha (propozycja listy do usunięcia/przeniesienia poza branch review)
-
-  AGENTS / meta
-
-   1. AGENTS.md
-
-  context/archive/
-  2. context/archive/2025-07-21-offers-api-contracts/baseline-provenance.md
-  3. context/archive/2025-07-21-offers-api-contracts/change.md
-  4. context/archive/2025-07-21-offers-api-contracts/plan-brief.md
-  5. context/archive/2025-07-21-offers-api-contracts/plan.md
-  6. context/archive/2025-07-21-offers-api-contracts/reviews/impl-review.md
-  7. context/archive/2026-05-28-compatibility-decision-spikes/change.md
-  8. context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md
-  9. context/archive/2026-05-28-compatibility-decision-spikes/plan-brief.md
-  10. context/archive/2026-05-28-compatibility-decision-spikes/plan.md
-  11. context/archive/2026-05-28-compatibility-decision-spikes/reviews/impl-review.md
-  12. context/archive/2026-05-29-boot4-runtime-startup/baseline-openapi-spec.json
-  13. context/archive/2026-05-29-boot4-runtime-startup/change.md
-  14. context/archive/2026-05-29-boot4-runtime-startup/plan-brief.md
-  15. context/archive/2026-05-29-boot4-runtime-startup/plan.md
-  16. context/archive/2026-05-29-boot4-runtime-startup/reviews/impl-review.md
-  17. context/archive/2026-06-08-code-consents-aoc-contracts/change.md
-  18. context/archive/2026-06-08-code-consents-aoc-contracts/plan-brief.md
-  19. context/archive/2026-06-08-code-consents-aoc-contracts/plan.md
-  20. context/archive/2026-06-08-protected-vas-behavior/change.md
-  21. context/archive/2026-06-08-protected-vas-behavior/plan-brief.md
-  22. context/archive/2026-06-08-protected-vas-behavior/plan.md
-  23. context/archive/2026-06-08-regression-proof-safety-net/change.md
-  24. context/archive/2026-06-08-regression-proof-safety-net/manual-smoke.md
-  25. context/archive/2026-06-08-regression-proof-safety-net/plan-brief.md
-  26. context/archive/2026-06-08-regression-proof-safety-net/plan.md
-  27. context/archive/2026-06-08-regression-proof-safety-net/reviews/impl-review.md
-  28. context/archive/README.md
-
-  context/changes/
-  29. context/changes/README.md
-
-  context/foundation/ (poza 2 wybranymi do przeniesienia)
-  30. context/foundation/health-check.md
-  31. context/foundation/lessons.md
-  32. context/foundation/prd.md
-  33. context/foundation/README.md
-  34. context/foundation/roadmap.md
-  35. context/foundation/stack-assessment.md
-
-  Jeśli chcesz, w kolejnym kroku zamienię ten draft na finalną „review mapę” 1:1 do wklejenia w MR opis (bez ruszania commitów).
+Pokaż poprawioną sekcję 3 (zwłaszcza wiersz ObjectMapperConfig z realnym wynikiem grepa) + zaktualizowany plan ekstrakcji. Dalej zero zmian w commitach/plikach.
