@@ -1,71 +1,13 @@
-● Domknięte — poniżej twarde rozstrzygnięcia z kodu.
+Wątek mapperów zamknięty — wszystkie cztery bezpieczne, wiersz ObjectMapperConfig spójny. Złóż teraz finalną mapę zmian w jeden czysty dokument, gotowy jako opis MR / docs/review/boot4-migration/MIGRATION.md. Wszystkie poprawki z ostatnich rund mają być w środku:
 
-  1) Bridge sygnatura vs injection Ceke — sprzeczność rozwiązana
+1. Sekcja behavioral-risk: wiersz ObjectMapperConfig w wersji uczciwej — bridge to J2 com.fasterxml.jackson.databind.json.JsonMapper (podtyp ObjectMapper) z disable(SORT_PROPERTIES_ALPHABETICALLY); jedyny konsument to CekeContextSource (deserialize-only, scalar DTO); dropniety Jdk8Module nieistotny dla tego konsumenta (brak typów Jdk8/Optional); bridge NIE jest dowodem pokrycia kontraktów HTTP — pokrycie webowe pochodzi z kontraktowych ITów (lever + baseline'y 3.5).
 
-  ObjectMapperConfig (HEAD):
+2. Dołącz pod-tabelkę 4 mapperów (CekeContextSource / ContextResolver / WebAnalyticsQueueService / JwtTokenSpringUtil) z finalnymi werdyktami: wszystkie J2 com.fasterxml; deserialize-only / internal round-trip / zero-diff vs 3.5; żaden nie wnosi dryfu. To domyka pytanie "co z ręcznymi mapperami poza lewarem".
 
-   @Bean
-   public ObjectMapper objectMapper() {
-       return JsonMapper.builder()
-           .disable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
-           .build();
-   }
+3. Pozostałe wiersze (application.yml udowodniony, application-dev.yml skorygowany — lever tylko w base, dziedziczony; pom.xml -> compatibility-decisions.md promowany; oba RabbitMQ matchIfMissing=true) bez zmian.
 
-  Importy:
+4. Sekcje 4-6 (3 callouty do świadomej akceptacji, co zweryfikowane, jak recenzować) + dwa zdania (33 mechaniczne, external/aoc+wksme1 GSON) bez zmian.
 
-   import com.fasterxml.jackson.databind.ObjectMapper;
-   import com.fasterxml.jackson.databind.json.JsonMapper;
+5. Plan ekstrakcji context/: 3 promowane (baseline-provenance.md, verification-closed.md, compatibility-decisions.md), reszta + AGENTS.md wypada.
 
-  CekeContextSource:
-
-   private final ObjectMapper objectMapper;
-
-  (konstruktor przez @RequiredArgsConstructor + @Service)
-
-  To jest type-compatible: com.fasterxml.jackson.databind.json.JsonMapper jest podtypem com.fasterxml.jackson.databind.ObjectMapper. Tu nie ma tools.jackson.*.
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  2) ContextResolver — tożsamość
-
-  src/main/java/pl/santander/vas/context/ContextResolver.java to zwykła klasa domenowa:
-
-   public class ContextResolver { ... }
-
-  Brak implements javax.ws.rs.ext.ContextResolver<ObjectMapper> / jakarta.ws.rs.ext.ContextResolver<ObjectMapper>.
-  Nie jest providerem JAX-RS; w tej klasie są tylko lokalne new ObjectMapper().readValue(...) (deserialize UserContext).
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  3) WebAnalyticsQueueService — source-unchanged gate
-
-  git diff 8ea55be225e0be67927db7ae0834a7837ad5b8b0..HEAD --
-
-   - src/main/java/pl/santander/vas/webanalytics/queue/WebAnalyticsQueueService.java
-   - src/main/java/pl/santander/vas/webanalytics/queue/CrmDto.java
-   - src/main/java/pl/santander/vas/webanalytics/queue/BigDataWebanalyticsDto.java
-
-  Wynik: pusty diff (zero zmian).
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Finalne werdykty (4 callerów)
-
-  ┌──────────────────────────┬─────────────────────────────────┬───────────────────────────────┬───────────────────────────────┬────────────────────────────────────────────────┐
-  │ Caller                   │ Wersja                          │ Serialize/Deserialize         │ Ścieżka                       │ Werdykt                                        │
-  ├──────────────────────────┼─────────────────────────────────┼───────────────────────────────┼───────────────────────────────┼────────────────────────────────────────────────┤
-  │ CekeContextSource        │ com.fasterxml bean-injected     │ deserialize-only              │ token validation              │ bezpieczny przez kod (i spójny typowo z        │
-  │                          │                                 │                               │                               │ bridge)                                        │
-  ├──────────────────────────┼─────────────────────────────────┼───────────────────────────────┼───────────────────────────────┼────────────────────────────────────────────────┤
-  │ ContextResolver          │ com.fasterxml, lokalne new      │ deserialize-only              │ context parsing               │ bezpieczny przez kod (nie JAX-RS provider)     │
-  │                          │ ObjectMapper()                  │                               │ (controller/security input)   │                                                │
-  ├──────────────────────────┼─────────────────────────────────┼───────────────────────────────┼───────────────────────────────┼────────────────────────────────────────────────┤
-  │ WebAnalyticsQueueService │ com.fasterxml, lokalne new      │ serialize                     │ queue payload                 │ bezpieczny przez niezmienność (zero diff vs    │
-  │                          │ ObjectMapper()                  │                               │                               │ 3.5 baseline)                                  │
-  ├──────────────────────────┼─────────────────────────────────┼───────────────────────────────┼───────────────────────────────┼────────────────────────────────────────────────┤
-  │ JwtTokenSpringUtil       │ com.fasterxml, lokalne new      │ serialize+deserialize         │ auth internals                │ bezpieczny przez kod                           │
-  │                          │ ObjectMapper()                  │ (internal transform)          │                               │                                                │
-  └──────────────────────────┴─────────────────────────────────┴───────────────────────────────┴───────────────────────────────┴────────────────────────────────────────────────┘
-
-  Wiersz ObjectMapperConfig można już mieć jako spójny: bridge istnieje, jest wstrzykiwalny do CekeContextSource, ale nie jest dowodem pokrycia kontraktów HTTP.
-
+Pokaż złożony dokument w całości. NIE wykonuj jeszcze ekstrakcji ani git rm — czekamy na potwierdzenie merge strategy z GitLaba, żeby zdecydować mechanikę (squash-merge: jeden commit remove-scaffolding + opis MR; preserve-commits: rebase context/ z historii + squash meta-commitów). Zero zmian w plikach/historii na tym etapie.
