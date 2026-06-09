@@ -1,52 +1,28 @@
-Jasne — poniżej tylko żądane poprawki, reszta dokumentu bez zmian.
+Mapa zatwierdzona, wykonujemy ekstrakcję context/ — ścieżka squash-merge (zakładam, że squashujesz ten MR). NIE pushuj; pokaż wynik do akceptacji.
 
-Poprawiony nagłówek (sekcja behavioral-risk)
+Krok 0 — najpierw zabezpiecz historię:
+git tag migration-full-history HEAD
+(zachowuje pełne 31 commitów + cały context/ + AGENTS.md zanim cokolwiek usuniemy — i jako bezpiecznik, i jako materiał na prezentację)
 
-Było: „6 plików behavioral-risk”
-Po korekcie: „5 plików prod-behavioral + 1 dev-config (application-dev.yml)”
+Krok 1 — promuj 3 dokumenty dowodowe do review-facing:
+utwórz docs/review/boot4-migration/ i git mv tam:
+- context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md
+- context/foundation/verification-closed.md
+- context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md
 
-Dopisek pod nagłówkiem:
+Krok 2 — zapisz finalną mapę jako docs/review/boot4-migration/MIGRATION.md (cały dokument w wersji po ostatnich poprawkach).
 
- application-dev.yml jest plikiem środowiska dev (nie niezależnym ryzykiem prod-runtime): zawiera dev-side ustawienia bramki RabbitMQ (mors.queue.enabled) oraz migrację klucza context-path w profilu dev.
+Krok 3 — usuń scaffolding:
+git rm -r context/
+git rm AGENTS.md
 
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Krok 4 — commit:
+"chore(migration): extract review evidence to docs/review, remove agent scaffolding"
 
-Poprawiony wiersz application-dev.yml (sekcja 3)
+Krok 5 — weryfikacja (pokaż wyniki):
+- git diff --stat <base 06689f10>..HEAD — potwierdź: zero context/, zero AGENTS.md, obecne 4 pliki w docs/review/boot4-migration/ (3 dowody + MIGRATION.md)
+- mvn package (test profile, jasypt dummy) — potwierdź że gate dalej zielony (usunięcie docs nie rusza testów, ale chcę pewność): 613 testów, BUILD SUCCESS
 
-┌──────────────────────────────────────────┬─────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Plik                                     │ Co zmienia                          │ Dlaczego bezpieczne + dowód                                                                │
-├──────────────────────────────────────────┼─────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
-│ src/main/resources/application-dev.yml   │ Dev-scoped config:                  │ Nie jest osobnym ryzykiem prod-runtime. mors.queue.enabled to devowa strona tej samej      │
-│                                          │ mors.queue.enabled: false +         │ bramki, którą egzekwują pliki RabbitMQ (@ConditionalOnProperty(..., matchIfMissing=true)). │
-│                                          │ migracja klucza serwera contextPath │ Zmiana context-path jest w profilu dev i ma charakter migracji klucza Boot 4 (zachowana    │
-│                                          │ → server.servlet.context-path       │ wartość /).                                                                                │
-└──────────────────────────────────────────┴─────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+Pokaż: git diff --stat base..HEAD, drzewo docs/review/boot4-migration/, wynik mvn package. STOP przed pushem — czekam na akceptację, dopiero potem push + opis MR.
 
-Faktyczny diff linii context-path:
-
- - server:
- -   contextPath: /
- + server:
- +   servlet:
- +     context-path: /
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Poprawiona sekcja 2 (Behavior-preserving levers)
-
-2) Behavior-preserving levers (why neutrality claim is credible)
-
- 1. Global web lever: spring.jackson.use-jackson2-defaults: true w application.yml.
- 2. Injected-mapper compatibility shim: bridge bean ObjectMapper dla ścieżek direct-injection; to mechanizm kompatybilności dla tych callerów, nie dowód pokrycia kontraktów HTTP.
- 3. Pinned compatibility decisions in POM: rationale i ograniczenia są udokumentowane w compatibility-decisions.md.
- 4. Proof model: zachowanie Boot 4 weryfikowane względem capture z Boot 3.5 (baseline/provenance), nie Boot4-vs-Boot4.
-
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-Drobna korekta scope (sekcja 1)
-
-W linii scope zamień:
-
- - „Jackson compatibility path”
- na:
- - „Jackson 2→3”.
+Jeśli zespół wymaga zachowania commitów (nie squash) — nie odpalaj tego, daj znać, robimy wariant z rebase context/ z historii zamiast pojedynczego commita usuwającego.
