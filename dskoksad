@@ -1,15 +1,40 @@
-Bridge finding dobry i uczciwie oznaczony. Ale grep odsłonił większe pytanie, którego mapa nie domyka — trzeba je scharakteryzować przed review.
+Masz rację — to było kluczowe pytanie. Sprawdziłem to na kodzie + resolved dependencies.
 
-Trzy lokalne new ObjectMapper() (ContextResolver, WebAnalyticsQueueService, JwtTokenSpringUtil) OMIJAJĄ globalny lewar. Kluczowe: use-jackson2-defaults rządzi tylko mapperem autokonfigurowanym przez Springa. Ręczny new ObjectMapper()/JsonMapper nie dziedziczy go — nie przechodzi przez config Springa. Więc jeśli któryś jest teraz Jacksonem 3 i serializuje, sortuje alfabetycznie + ma J3 defaulty null/dat = ten sam dryf, który zamknęliśmy globalnie, na ścieżce poza lewarem i poza ITami. Bridge jawnie robi disable(SORT_PROPERTIES_ALPHABETICALLY) — ktoś wiedział o problemie; pytanie czy ten fix trafił do tych trzech.
+Najważniejszy wynik: nie znalazłem „J3 local serializer bez guardów” w tych 4 callerach.
+mvn dependency:tree pokazuje obie linie na classpath (tools.jackson.*:3.1.2 i com.fasterxml.jackson.*:2.21.x), ale wszystkie 4 analizowane miejsca używają com.fasterxml.jackson.databind.ObjectMapper (czyli ścieżki Jackson 2 API), nie tools.jackson.*.
 
-Zadanie — dla każdego z trzech lokalnych callerów:
-1. Jaka wersja Jacksona teraz (sprawdź import: com.fasterxml.jackson = J2, tools.jackson/JsonMapper = J3)
-2. Serializuje czy tylko deserializuje
-3. Jeśli serializuje na J3: czy wyłącza SORT_PROPERTIES_ALPHABETICALLY i ogarnia null-inclusion, czy po cichu bierze J3 defaulty (= dryf)
-4. Na jakiej ścieżce siedzi (partner-facing / queue / wewnętrzne)
+┌────────────────────────────┬──────────────────┬───────────────────────────┬────────────────────────────────────────┬─────────────────────────┬──────────────────────────────┐
+│ Caller                     │ Wersja (po       │ Serialize / Deserialize   │ Sort-handling jeśli J3 serialize       │ Ścieżka                 │ Werdykt                      │
+│                            │ imporcie)        │                           │                                        │                         │                              │
+├────────────────────────────┼──────────────────┼───────────────────────────┼────────────────────────────────────────┼─────────────────────────┼──────────────────────────────┤
+│ CekeContextSource          │ com.fasterxml    │ Deserialize only (        │ N/A (nie serializuje; nie J3 local)    │ token validation (CEKE  │ bezpieczny przez kod (wąski, │
+│                            │ (J2 API) +       │ readValue), brak          │                                        │ context), wewnętrzna    │ scalar DTO:                  │
+│                            │ bean-injected    │ writeValue*               │                                        │ security path           │ String/long/bool)            │
+│                            │ mapper           │                           │                                        │                         │                              │
+├────────────────────────────┼──────────────────┼───────────────────────────┼────────────────────────────────────────┼─────────────────────────┼──────────────────────────────┤
+│ ContextResolver            │ com.fasterxml    │ Deserialize only (        │ N/A (nie serializuje; nie J3 local)    │ szeroko używany w       │ bezpieczny przez kod dla     │
+│                            │ (J2 API),        │ readValue), brak          │                                        │ controllerach do        │ tematu serializacji; nie     │
+│                            │ lokalne new      │ writeValue*               │                                        │ odczytu UserContext z   │ jest to ścieżka output JSON  │
+│                            │ ObjectMapper()   │                           │                                        │ principal/header        │                              │
+├────────────────────────────┼──────────────────┼───────────────────────────┼────────────────────────────────────────┼─────────────────────────┼──────────────────────────────┤
+│ WebAnalyticsQueueService   │ com.fasterxml    │ Serialize (               │ N/A dla warunku „J3 serialize”;        │ outbound                │ nieudowodnione (brak sygnału │
+│                            │ (J2 API),        │ writeValueAsString)       │ dodatkowo ma explicit: JavaTimeModule, │ Rabbit/webanalytics     │ J3-dryfu, ale brak pinu      │
+│                            │ lokalne new      │                           │ WRITE_DATES_AS_TIMESTAMPS=false,       │ payload (queue-facing)  │ baseline payload w tym       │
+│                            │ ObjectMapper()   │                           │ NON_NULL                               │                         │ checku)                      │
+├────────────────────────────┼──────────────────┼───────────────────────────┼────────────────────────────────────────┼─────────────────────────┼──────────────────────────────┤
+│ JwtTokenSpringUtil         │ com.fasterxml    │ Serialize+deserialize (   │ N/A dla warunku „J3 serialize”         │ auth internals (token   │ bezpieczny przez kod         │
+│                            │ (J2 API),        │ writeValueAsString ->     │                                        │ claims ->               │ (wewnętrzna transformacja,   │
+│                            │ lokalne new      │ readValue)                │                                        │ SecurityContext)        │ brak kontraktu payloadowego  │
+│                            │ ObjectMapper()   │                           │                                        │                         │ na zewnątrz)                 │
+└────────────────────────────┴──────────────────┴───────────────────────────┴────────────────────────────────────────┴─────────────────────────┴──────────────────────────────┘
 
-Priorytet ContextResolver: ContextResolver<ObjectMapper> to JAX-RS — przy CXF najpewniej karmi serializację klientów partnerskich, poza spring-mvc ITami. Jeśli lokalny J3 bez disable-sort = partner-facing dryf, realne znalezisko. Potem WebAnalyticsQueueService (payload kolejki), na końcu JwtTokenSpringUtil.
+Doprecyzowanie dot. bridge (ObjectMapperConfig)
 
-Osobno: potwierdź że CekeContextSource TYLKO deserializuje (nic nie serializuje przez bridge). Jeśli tak — scalar-deserialize String/long/bool stabilny J2->J3, sort/Jdk8 nieistotne, akceptujemy jako scharakteryzowany residual. Jeśli serializuje cokolwiek przez bridge -> sprawdź co i czy ordering ma znaczenie.
+ - Bridge bean rzeczywiście nie jest pokrywany przez HTTP contract IT.
+ - W praktyce jego realny konsument w tej ścieżce to CekeContextSource, który tylko deserializuje.
+ - To znaczy: brak dowodu „bridge chroni kontrakty HTTP”, ale też brak sygnału, że bridge wprowadza serializacyjny dryf na ścieżce wyjściowej.
 
-Output: tabelka 4 callerów (CekeContextSource + 3 lokalne) | wersja | serialize/deserialize | sort-handling jeśli J3 serialize | ścieżka | werdykt (bezpieczny przez kod / nieudowodnione / dryf). Werdykt "dryf" przy którymkolwiek serializującym J3 bez disable-sort = decydujemy czy fix (dodać disable-sort + null-handling jak w bridge) czy pin baseline. Zero zmian w kodzie zanim nie zobaczę tabelki.
+Czy mamy „dryf” wymagający natychmiast fixu?
+
+Nie wykryłem warunku „J3 local serialize bez disable-sort/null handling”.
+Jedyne miejsce, które serializuje lokalnie payload biznesowy poza web converterem, to WebAnalyticsQueueService, ale na com.fasterxml i z częścią jawnych ustawień. To jest bardziej temat „pin baseline dla queue payload” niż „J3 dryf”.
