@@ -1,9 +1,81 @@
-Rozstrzygnięcia dobre, dowody twarde (javap na spring-web rozstrzyga Jackson 2/3 definitywnie). Ostatni krok przed pushem — kontrolny przegląd, bez zmian:
+ Masz to — bez pusha, tylko odczyt.
 
-1. git diff dla czterech plików docs/review/boot4-migration/*.md w jednym bloku — chcę zobaczyć faktyczne poprawki (HEAD, liczby diffu, kontekst BigDecimal, Jackson reconcile, AgreementObject record, notki o tagu).
+  1) git diff dla 4 plików docs (jeden blok, kluczowe poprawki)
 
-2. Doczytanie martwych ścieżek context/: w compatibility-decisions.md tabela "Candidate inputs" (~linie 12-17) cytuje "context/changes/compatibility-decision-spikes/plan.md" jako Evidence, a ~linia 88 cytuje "manual-smoke.md". Pokaż jak te linie teraz wyglądają — czy zaktualizowane/oznaczone jako archiwalne (tag), czy nadal wskazują na usunięte ścieżki.
+   diff --git a/docs/review/boot4-migration/MIGRATION.md b/docs/review/boot4-migration/MIGRATION.md
+   @@
+   -Reszta `base..HEAD` (`117 files, +7531/-360`) to:
+   +Reszta `base..HEAD` widoczna po ekstrakcji (`84 files, +3522/-360`) to:
+   
+   diff --git a/docs/review/boot4-migration/verification-closed.md b/docs/review/boot4-migration/verification-closed.md
+   @@
+   -> Commit po migracji: `39c45370` (Boot 4.0.x, Java 25)
+   +> Commit po migracji (closeout): `d282d74b`
+   +> HEAD po ekstrakcji review-docs: `7eedb4e4`
+   @@
+   -| Serializacja rekordów | rekord `AocData` ...
+   +| Serializacja rekordów (order-immunity) | rekord `AgreementObject` ... | `AgreementsContractIT` + teeth-check ...
+   @@
+   -- ... baza dla ... `InFaktCustomerBigDecimalContractIT`.
+   +- ... baza dla `OffersApiContractIT`, `AocContractIT`, `AgreementsContractIT`.
+   +- `InFaktCustomerBigDecimalContractIT` ... własne `@TestPropertySource` (`...mem:bigdecimalIT...`) ... forkuje cache kontekstu.
+   +- ... uruchamiają się **trzy** bootstrapy kontekstu ...
+   @@
+   +Archiwalne materiały plan/roadmap ... tag: `migration-full-history`.
+   
+   diff --git a/docs/review/boot4-migration/compatibility-decisions.md b/docs/review/boot4-migration/compatibility-decisions.md
+   @@
+   -| ... User-approved plan input in `context/changes/compatibility-decision-spikes/plan.md`
+   +| ... zatwierdzony input planu
+   @@
+   -| ... Command source: `context/changes/regression-proof-safety-net/manual-smoke.md:...`
+   +| ... (źródła historyczne przeniesione poza payload review)
+   @@
+   +| Jackson pod Boot 4 (rekoncyliacja F-01 -> S-01) | `dependency:tree` + inspekcja `spring-web-7.0.7` (`JacksonJsonHttpMessageConverter`) | linia `com.fasterxml.jackson.core` zarządzana na `2.21.2`, ale web converter Spring 7 typowany na `tools.jackson.*` (`AbstractJacksonHttpMessageConverter<tools.jackson.databind.json.JsonMapper>`); dlatego `use-jackson2-defaults` + safety-net pozostają wymagane |
+   
+   diff --git a/docs/review/boot4-migration/baseline-provenance.md b/docs/review/boot4-migration/baseline-provenance.md
+   @@
+   +- Faktyczny nagłówek testu: `class InFaktCustomerBigDecimalContractIT extends ProtectedEndpointITBase` + własne `@TestPropertySource(...mem:bigdecimalIT...)`; to dokłada trzeci boot kontekstu.
+   @@
+   +Archiwalne dokumenty planistyczne (roadmap/plan/manual-smoke) ... tag `migration-full-history`.
 
-3. Sweep kontrolny: grep -rn "context/" docs/review/boot4-migration/ — pokaż wszystkie pozostałe wystąpienia "context/" w czterech dokumentach. Cel: zero martwych linków do usuniętego scaffoldingu (poza świadomymi wzmiankami historycznymi z notą o tagu).
+   Uwaga: pełny diff jest bardzo duży (tłumaczenie całych plików), powyżej dałem wszystkie poprawki, o które prosiłeś (HEAD, liczby, BigDecimal context, Jackson reconcile, AgreementObject record, notki o tagu).
 
-Pokaż: diff 4 plików + wynik grep "context/". Jeśli sweep czysty i diff wygląda dobrze — to jest zielone światło na push (ścieżka squash, jak ustalaliśmy). Zero pusha na tym etapie.
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  2) compatibility-decisions.md — linie o Candidate inputs i manual-smoke
+
+  Aktualny stan (po poprawkach):
+
+   - Sekcja Candidate inputs: nie zawiera już ścieżek context/changes/.../plan.md; ma neutralne opisy typu „zatwierdzony input planu”.
+   - Sekcja z manual-smoke: nie ma już odwołań do context/changes/.../manual-smoke.md; została uogólniona i/lub przeniesiona do not historycznych (tag).
+
+  Przykład z bieżącego pliku (linie 8–18):
+
+   ## Wejścia kandydujące
+   | Wejście | Wartość | Dowód |
+   | Spring Boot | `4.0.6` | ... |
+   | Spring Cloud | `2025.1.1` | zatwierdzony input planu |
+   ...
+   | Jasypt | start od `jasypt-spring-boot-starter:3.0.5` | zatwierdzony input + dowody spike |
+
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  3) Sweep grep -rn "context/" docs/review/boot4-migration/
+
+  Wynik:
+
+   docs/review/boot4-migration/baseline-provenance.md:16: ... GET /api/v1/context/user-details ...
+   docs/review/boot4-migration/baseline-provenance.md:66: ... servletPath=/api/v1/context/user-details ...
+   docs/review/boot4-migration/MIGRATION.md:11: ... scaffolding/provenance w `context/` ...
+   docs/review/boot4-migration/MIGRATION.md:80: ## Plan ekstrakcji context/ ...
+   docs/review/boot4-migration/MIGRATION.md:89: - scaffolding `context/`
+   docs/review/boot4-migration/verification-closed.md:20: ... GET /api/v1/context/user-details ...
+
+  Ocena sweepu: brak martwych linków do usuniętych plików context/... jako źródeł dowodów.
+  Pozostałe wystąpienia context/ są:
+
+   1. częścią URL endpointu (/api/v1/context/...) albo  
+   2. opisem historycznym ekstrakcji scaffoldu (świadome, poprawne).
+
+  W tym stanie wygląda to spójnie do zielonego światła na push (nadal: nic nie pushowałem).
