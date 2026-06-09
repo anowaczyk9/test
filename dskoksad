@@ -1,81 +1,17 @@
- Masz to — bez pusha, tylko odczyt.
+Docs zielone, sweep context/ czysty. Push + MR — odpal TYLKO jeśli squash jest włączony dla tego MR (Settings -> Merge requests -> Squash commits, albo wybrany przy tworzeniu MR). Jeśli zespół ZACHOWUJE commity -> NIE pushuj, daj znać, robimy wariant rebase.
 
-  1) git diff dla 4 plików docs (jeden blok, kluczowe poprawki)
+Krok 0 (szybka domiatka): grep -n "record" docs/review/boot4-migration/verification-closed.md — jeśli AocData jest gdzieś jeszcze nazwane "record DTO" (np. w tabeli Auth and HTTP contract surfaces), popraw na "class DTO"/"DTO" (AocData to public class, nie record). Pokaż wynik grepa.
 
-   diff --git a/docs/review/boot4-migration/MIGRATION.md b/docs/review/boot4-migration/MIGRATION.md
-   @@
-   -Reszta `base..HEAD` (`117 files, +7531/-360`) to:
-   +Reszta `base..HEAD` widoczna po ekstrakcji (`84 files, +3522/-360`) to:
-   
-   diff --git a/docs/review/boot4-migration/verification-closed.md b/docs/review/boot4-migration/verification-closed.md
-   @@
-   -> Commit po migracji: `39c45370` (Boot 4.0.x, Java 25)
-   +> Commit po migracji (closeout): `d282d74b`
-   +> HEAD po ekstrakcji review-docs: `7eedb4e4`
-   @@
-   -| Serializacja rekordów | rekord `AocData` ...
-   +| Serializacja rekordów (order-immunity) | rekord `AgreementObject` ... | `AgreementsContractIT` + teeth-check ...
-   @@
-   -- ... baza dla ... `InFaktCustomerBigDecimalContractIT`.
-   +- ... baza dla `OffersApiContractIT`, `AocContractIT`, `AgreementsContractIT`.
-   +- `InFaktCustomerBigDecimalContractIT` ... własne `@TestPropertySource` (`...mem:bigdecimalIT...`) ... forkuje cache kontekstu.
-   +- ... uruchamiają się **trzy** bootstrapy kontekstu ...
-   @@
-   +Archiwalne materiały plan/roadmap ... tag: `migration-full-history`.
-   
-   diff --git a/docs/review/boot4-migration/compatibility-decisions.md b/docs/review/boot4-migration/compatibility-decisions.md
-   @@
-   -| ... User-approved plan input in `context/changes/compatibility-decision-spikes/plan.md`
-   +| ... zatwierdzony input planu
-   @@
-   -| ... Command source: `context/changes/regression-proof-safety-net/manual-smoke.md:...`
-   +| ... (źródła historyczne przeniesione poza payload review)
-   @@
-   +| Jackson pod Boot 4 (rekoncyliacja F-01 -> S-01) | `dependency:tree` + inspekcja `spring-web-7.0.7` (`JacksonJsonHttpMessageConverter`) | linia `com.fasterxml.jackson.core` zarządzana na `2.21.2`, ale web converter Spring 7 typowany na `tools.jackson.*` (`AbstractJacksonHttpMessageConverter<tools.jackson.databind.json.JsonMapper>`); dlatego `use-jackson2-defaults` + safety-net pozostają wymagane |
-   
-   diff --git a/docs/review/boot4-migration/baseline-provenance.md b/docs/review/boot4-migration/baseline-provenance.md
-   @@
-   +- Faktyczny nagłówek testu: `class InFaktCustomerBigDecimalContractIT extends ProtectedEndpointITBase` + własne `@TestPropertySource(...mem:bigdecimalIT...)`; to dokłada trzeci boot kontekstu.
-   @@
-   +Archiwalne dokumenty planistyczne (roadmap/plan/manual-smoke) ... tag `migration-full-history`.
+Krok 1: push brancza na remote.
 
-   Uwaga: pełny diff jest bardzo duży (tłumaczenie całych plików), powyżej dałem wszystkie poprawki, o które prosiłeś (HEAD, liczby, BigDecimal context, Jackson reconcile, AgreementObject record, notki o tagu).
+Krok 2: otwórz MR. Tytuł: "Spring Boot 3.5.13 -> 4.0.6 migration + serialization verification net".
 
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Krok 3: opis MR (wyciągnięty z MIGRATION.md, nie chowany w pliku):
+- Punchline: realna powierzchnia behawioralna to 5 plików prod-behavioral + 1 dev-config, ~79 linii; reszta widocznego diffu (84 files, +3522/-360) to mechanika (package moves, Swagger->OpenAPI) + safety net testowy + 3 dokumenty dowodowe. Pełna mapa: docs/review/boot4-migration/MIGRATION.md
+- Sekcja "jak recenzować": levers -> 6 plików -> tabela domknięcia mapperów -> spot-check netu -> 3 świadome akceptacje
+- Trzy świadome akceptacje: surefire IT-gate w pom.xml (ITy teraz w CI), martwy @SecureWithTokens (pre-existing, nie wprowadzony przez migrację), safety net test-only
+- Linki: docs/review/boot4-migration/{baseline-provenance.md, verification-closed.md, compatibility-decisions.md}
 
-  2) compatibility-decisions.md — linie o Candidate inputs i manual-smoke
+Krok 4: pokaż URL MR + potwierdź że pipeline CI ruszył ORAZ że surefire IT-gate faktycznie odpala ITy na serwerze (chcę widzieć 613 testów w pipeline, nie tylko lokalnie).
 
-  Aktualny stan (po poprawkach):
-
-   - Sekcja Candidate inputs: nie zawiera już ścieżek context/changes/.../plan.md; ma neutralne opisy typu „zatwierdzony input planu”.
-   - Sekcja z manual-smoke: nie ma już odwołań do context/changes/.../manual-smoke.md; została uogólniona i/lub przeniesiona do not historycznych (tag).
-
-  Przykład z bieżącego pliku (linie 8–18):
-
-   ## Wejścia kandydujące
-   | Wejście | Wartość | Dowód |
-   | Spring Boot | `4.0.6` | ... |
-   | Spring Cloud | `2025.1.1` | zatwierdzony input planu |
-   ...
-   | Jasypt | start od `jasypt-spring-boot-starter:3.0.5` | zatwierdzony input + dowody spike |
-
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  3) Sweep grep -rn "context/" docs/review/boot4-migration/
-
-  Wynik:
-
-   docs/review/boot4-migration/baseline-provenance.md:16: ... GET /api/v1/context/user-details ...
-   docs/review/boot4-migration/baseline-provenance.md:66: ... servletPath=/api/v1/context/user-details ...
-   docs/review/boot4-migration/MIGRATION.md:11: ... scaffolding/provenance w `context/` ...
-   docs/review/boot4-migration/MIGRATION.md:80: ## Plan ekstrakcji context/ ...
-   docs/review/boot4-migration/MIGRATION.md:89: - scaffolding `context/`
-   docs/review/boot4-migration/verification-closed.md:20: ... GET /api/v1/context/user-details ...
-
-  Ocena sweepu: brak martwych linków do usuniętych plików context/... jako źródeł dowodów.
-  Pozostałe wystąpienia context/ są:
-
-   1. częścią URL endpointu (/api/v1/context/...) albo  
-   2. opisem historycznym ekstrakcji scaffoldu (świadome, poprawne).
-
-  W tym stanie wygląda to spójnie do zielonego światła na push (nadal: nic nie pushowałem).
+Nie scalaj MR — tylko otwórz i pokaż status pipeline.
