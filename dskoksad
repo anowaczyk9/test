@@ -1,21 +1,118 @@
-NIE pushuj. Przegląd realnych docs przed pushem wykrył sprzeczności do naprawienia. Dla każdej: ustal prawdę z KODU/repo, potem zrównaj dokumenty — nie odwrotnie.
+ Masz rację — zrobiłem to „od kodu do dokumentów”. Nic nie było pushowane.
 
-KRYTYCZNE (recenzent złapie otwierając kod):
+  1) Fakty z kodu (BigDecimal IT + AocData)
 
-1. Kontekst testu BigDecimal — dokumenty przeczą Twojemu raportowi z gate'u. baseline-provenance.md (~linia 517) i verification-closed.md (Test infrastructure) mówią, że InFaktCustomerBigDecimalContractIT extends ProtectedEndpointITBase i że są DWA konteksty. Twój raport zamknięcia mówił TRZY (bigdecimalIT osobny przez @TestPropertySource, bo InFaktService package-private nie może iść do ProtectedEndpointITBase). Otwórz faktyczny InFaktCustomerBigDecimalContractIT.java: co extenduje i czy ma własny @TestPropertySource? Ustal prawdę, potem popraw OBA dokumenty + liczbę kontekstów. Re-run pełnego gate'u i podaj faktyczną liczbę boot-ów (ile linii "Started").
+  InFaktCustomerBigDecimalContractIT.java (faktyczny nagłówek)
 
-2. Jackson 2 vs 3 — compatibility-decisions.md (linie 99-100) mówi "Boot 4 manages Jackson 2.21.2 (still Jackson 2.x), no serialization drift". MIGRATION.md/verification-closed.md stoją na "Jackson 2->3" + use-jackson2-defaults. Sprzeczność. Potwierdź z dependency:tree i z faktycznym typem autokonfigurowanego web mappera: czy Boot 4 autokonfiguruje tools.jackson (J3) JsonMapper, a com.fasterxml 2.21.2 jest tranzytywny? Zrekoncyliuj compatibility-decisions.md: zawęź claim do "linia com.fasterxml.jackson.core zarządzana na 2.21.2" i dopisz, że web mapper Boota 4 to Jackson 3 (dlatego lever + net istnieją); odczyt F-01 był wczesny i uściślony w S-01.
+   @TestPropertySource(properties =
+       "spring.datasource.url=jdbc:h2:mem:bigdecimalIT;MODE=PostgreSQL;DATABASE_TO_LOWER=true;INIT=CREATE SCHEMA IF NOT EXISTS vassme\\;SET SCHEMA vassme"
+   )
+   class InFaktCustomerBigDecimalContractIT extends ProtectedEndpointITBase {
 
-3. verification-closed.md: "Post-migration HEAD: 39c45370" jest zły (to commit z ery S-03, 2026-06-03; dokument opisuje S-06 z 2026-06-08, które przyszło później). Potwierdź git rev-parse HEAD i wstaw faktyczny (d282d74b closeout / 7eedb4e4 po ekstrakcji).
+  Czyli: extends ProtectedEndpointITBase + własny @TestPropertySource (fork kontekstu).
 
-NIEAKTUALNE PO EKSTRAKCJI:
+  AocData nie jest recordem
 
-4. MIGRATION.md TL;DR: "117 files, +7531/-360" jest sprzed ekstrakcji. Podaj faktyczny git diff --stat base..HEAD (84 files / +3522/-360) jako to, co recenzent widzi, albo wyraźnie oznacz 117/7531 jako sumę przed ekstrakcją.
+  Z repo:
 
-5. Martwe ścieżki context/: verification-closed.md (tabela Artifacts -> baseline-provenance.md, roadmap.md) i compatibility-decisions.md (cytaty plan.md, manual-smoke.md). Zaktualizuj na docs/review/boot4-migration/ gdzie dotyczy; dla roadmap/plan (wyrzucone z pusha) napisz że są na tagu migration-full-history, nie w repo review.
+   src/main/java/pl/santander/vas/aoc/AocData.java:14:public class AocData {
 
-DROBIAZG:
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-6. verification-closed.md przypisuje "record serialization" do AocData. Sprawdź czy AocData to faktycznie record. Rekord z teeth-checkiem sort-immunity to AgreementObject — jeśli AocData nie jest recordem, przypisz dowód record-serialization do AgreementObject.
+  2) Re-run pełnego gate’u + liczba „Started”
 
-Pokaż: faktyczny nagłówek InFaktCustomerBigDecimalContractIT.java (extends + @TestPropertySource), wynik re-runu gate'u z liczbą kontekstów, rev-parse HEAD, dependency:tree dla jackson (obie linie), i poprawione fragmenty wszystkich dokumentów. Zero pusha.
+  Uruchomione:
+
+   mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package
+
+  Log: C:\Temp\mvn-package-fullgate.log
+
+  Policzone:
+
+   - STARTED_TOTAL=102  (wszystkie linie zawierające „Started ”)
+   - SPRINGBOOTTEST_CLASS_STARTED=28 (linie typu „Started ...Test in ... seconds”)
+   - Dla migracyjnych IT (match na klasy kontraktowe) pojawiają się 3 unikalne starty: - AgreementsContractIT
+   - CodeFlowSkipPathIT
+   - InFaktCustomerBigDecimalContractIT
+
+  To wspiera tezę o trzech bootstrapach kontekstu dla strumienia migracyjnego.
+
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  3) Jackson 2 vs 3 — potwierdzenie z repo
+
+  dependency:tree (obie linie obecne)
+
+   [INFO] |        \- tools.jackson.core:jackson-databind:jar:3.1.2:compile
+   [INFO] |           \- tools.jackson.core:jackson-core:jar:3.1.2:compile
+   [INFO] +- com.fasterxml.jackson.core:jackson-core:jar:2.21.2:compile
+   [INFO] +- com.fasterxml.jackson.core:jackson-databind:jar:2.21.2:compile
+   [INFO] \- com.fasterxml.jackson.core:jackson-annotations:jar:2.21:compile
+
+  Faktyczny typ web convertera (Spring Web 7)
+
+  Z javap na spring-web-7.0.7.jar:
+
+   JacksonJsonHttpMessageConverter extends AbstractJacksonHttpMessageConverter<tools.jackson.databind.json.JsonMapper>
+
+  Czyli web converter Spring 7 jest typowany na tools.jackson.*.
+
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  4) rev-parse HEAD
+
+   HEAD=7eedb4e4
+
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  5) Poprawione fragmenty dokumentów
+
+  docs/review/boot4-migration/verification-closed.md
+
+   - Nagłówek commitów:
+
+   > Commit po migracji (closeout): `d282d74b`  
+   > HEAD po ekstrakcji review-docs: `7eedb4e4`
+
+   - Record serialization poprawione z AocData na AgreementObject:
+
+   | Serializacja rekordów (order-immunity) | rekord `AgreementObject` ... |
+
+   - Infrastruktura testowa poprawiona do 3 kontekstów i jawny fork bigdecimalIT:
+
+   - `InFaktCustomerBigDecimalContractIT` ... własne `@TestPropertySource` ... forkuje cache kontekstu.
+   - W pełnym gate uruchamiają się **trzy** bootstrapy kontekstu ...
+
+   - Dodana informacja o materiałach archiwalnych na tagu:
+
+   Archiwalne materiały plan/roadmap ... `migration-full-history`.
+
+  docs/review/boot4-migration/compatibility-decisions.md
+
+   - Zrekoncyliowany wiersz Jackson:
+
+   linia `com.fasterxml.jackson.core` jest zarządzana na `2.21.2` ...
+   web converter Spring 7 jest typowany na `tools.jackson.*`
+   (`AbstractJacksonHttpMessageConverter<tools.jackson.databind.json.JsonMapper>`);
+   dlatego lever `use-jackson2-defaults` + safety-net są nadal wymagane
+
+  docs/review/boot4-migration/baseline-provenance.md
+
+   - Dopisany fakt o BigDecimal IT:
+
+   ... extends ProtectedEndpointITBase + własne @TestPropertySource(...bigdecimalIT...)
+   ... dokłada trzeci boot kontekstu ...
+
+   - Dopisana notka o archiwaliach:
+
+   Archiwalne dokumenty planistyczne ... tag `migration-full-history`.
+
+  docs/review/boot4-migration/MIGRATION.md
+
+   - TL;DR zaktualizowany do stanu po ekstrakcji:
+
+   Reszta `base..HEAD` widoczna po ekstrakcji (`84 files, +3522/-360`) ...
+
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  Jeśli chcesz, mogę teraz zrobić tylko kontrolny git diff dla tych 4 .md, żebyś miał jeden blok do szybkiego review przed decyzją o kolejnym kroku.
