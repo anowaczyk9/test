@@ -1,37 +1,15 @@
-Wykonane zgodnie z planem (bez pusha).
+Ekstrakcja zweryfikowana, net diff czysty, gate zielony. Push + MR — odpal TYLKO jeśli potwierdziłeś, że ten MR jest squashowany (jeśli zespół zachowuje commity, NIE pushuj, robimy wariant rebase).
 
- - Utworzony tag bezpieczeństwa: migration-full-history na wcześniejszym HEAD.
- - Wykonana ekstrakcja + cleanup + commit: - Commit: 7eedb4e4
- - Message: chore(migration): extract review evidence to docs/review, remove agent scaffolding
+1. Push brancza na remote.
 
-git diff --stat 06689f109a5eeb8266900c3fcb1c68d863632fdb..HEAD
+2. Otwórz MR. Tytuł: "Spring Boot 3.5.13 -> 4.0.6 migration + serialization verification net".
 
- docs/review/boot4-migration/MIGRATION.md           |  90 ++++
- docs/review/boot4-migration/baseline-provenance.md | 538 +++++++++++++++++++++
- docs/review/boot4-migration/compatibility-decisions.md | 133 +++++
- docs/review/boot4-migration/verification-closed.md |  77 +++
- ... (prod/test migration diff)
- 84 files changed, 3522 insertions(+), 360 deletions(-)
+3. Opis MR — nie chowaj framingu w pliku, wyciągnij do opisu z MIGRATION.md:
+- Punchline: realna powierzchnia behawioralna to 5 plików prod / ~79 linii; reszta to mechanika (package moves, Swagger->OpenAPI), safety net testowy, dokumenty dowodowe. Pełna mapa: docs/review/boot4-migration/MIGRATION.md
+- Sekcja "Jak to recenzować" (kolejność: levers -> 6 plików -> tabelka mapperów -> spot-check netu -> 3 świadome akceptacje)
+- Trzy rzeczy do świadomej akceptacji: surefire IT-gate w pom.xml (ITy teraz w CI), martwy @SecureWithTokens (pre-existing, nie wprowadzony przez migrację), safety net test-only
+- Linki do 3 dowodów: docs/review/boot4-migration/{baseline-provenance.md, verification-closed.md, compatibility-decisions.md}
 
-W statystyce nie ma context/ ani AGENTS.md (zostały usunięte/przeniesione).
+4. Po otwarciu MR pokaż URL i potwierdź że pipeline CI ruszył (chcę widzieć, że surefire IT-gate faktycznie odpala ITy w CI, nie tylko lokalnie).
 
-Drzewo docs/review/boot4-migration/
-
- docs/review/boot4-migration/baseline-provenance.md
- docs/review/boot4-migration/compatibility-decisions.md
- docs/review/boot4-migration/MIGRATION.md
- docs/review/boot4-migration/verification-closed.md
-
-mvn package (profil test + jasypt dummy)
-
-Uruchomione:
-
- mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package
-
-Wynik:
-
- [INFO] BUILD SUCCESS
- [INFO] Tests run: 613, Failures: 0, Errors: 0, Skipped: 9
- [INFO] Total time: 01:57 min
-
-Zatrzymuję się tutaj przed pushem, zgodnie z Twoją instrukcją.
+Nie scalaj MR — tylko otwórz i pokaż status pipeline.
