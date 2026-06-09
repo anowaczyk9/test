@@ -1,15 +1,9 @@
-Ekstrakcja zweryfikowana, net diff czysty, gate zielony. Push + MR — odpal TYLKO jeśli potwierdziłeś, że ten MR jest squashowany (jeśli zespół zachowuje commity, NIE pushuj, robimy wariant rebase).
+NIE pushuj i NIE otwieraj MR — tylko wyświetl do wglądu. Chcę zobaczyć faktyczną zawartość, zanim cokolwiek pójdzie na remote.
 
-1. Push brancza na remote.
+1. cat docs/review/boot4-migration/MIGRATION.md — pełna, dosłowna zawartość zacommitowanego pliku (to, co realnie jest w repo na 7eedb4e4).
 
-2. Otwórz MR. Tytuł: "Spring Boot 3.5.13 -> 4.0.6 migration + serialization verification net".
+2. Wypisz proponowany opis MR jako DRAFT tekstu (tytuł + body), tak jak wyglądałby przy otwieraniu — ale NIE twórz MR. Chcę go przeczytać i zatwierdzić brzmienie, zanim zostanie użyty. Treść jak ustalaliśmy: punchline (5 prod + 1 dev-config / ~79 linii, link do MIGRATION.md), sekcja "jak recenzować", 3 świadome akceptacje, linki do 3 dowodów.
 
-3. Opis MR — nie chowaj framingu w pliku, wyciągnij do opisu z MIGRATION.md:
-- Punchline: realna powierzchnia behawioralna to 5 plików prod / ~79 linii; reszta to mechanika (package moves, Swagger->OpenAPI), safety net testowy, dokumenty dowodowe. Pełna mapa: docs/review/boot4-migration/MIGRATION.md
-- Sekcja "Jak to recenzować" (kolejność: levers -> 6 plików -> tabelka mapperów -> spot-check netu -> 3 świadome akceptacje)
-- Trzy rzeczy do świadomej akceptacji: surefire IT-gate w pom.xml (ITy teraz w CI), martwy @SecureWithTokens (pre-existing, nie wprowadzony przez migrację), safety net test-only
-- Linki do 3 dowodów: docs/review/boot4-migration/{baseline-provenance.md, verification-closed.md, compatibility-decisions.md}
+3. Potwierdź stan: HEAD = 7eedb4e4, branch lokalny (nie pushowany), tag migration-full-history na miejscu, nic nie wysłane na remote.
 
-4. Po otwarciu MR pokaż URL i potwierdź że pipeline CI ruszył (chcę widzieć, że surefire IT-gate faktycznie odpala ITy w CI, nie tylko lokalnie).
-
-Nie scalaj MR — tylko otwórz i pokaż status pipeline.
+Zero operacji git zmieniających cokolwiek. Tylko cat + draft tekstu + potwierdzenie stanu.
