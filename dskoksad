@@ -1,69 +1,15 @@
- Super — poniżej poprawiona sekcja 3 (z uczciwym statusem dla bridge path) i zaktualizowany plan ekstrakcji context/.
+Bridge finding dobry i uczciwie oznaczony. Ale grep odsłonił większe pytanie, którego mapa nie domyka — trzeba je scharakteryzować przed review.
 
-  3) Sześć plików behavioral-risk — poprawiona wersja
+Trzy lokalne new ObjectMapper() (ContextResolver, WebAnalyticsQueueService, JwtTokenSpringUtil) OMIJAJĄ globalny lewar. Kluczowe: use-jackson2-defaults rządzi tylko mapperem autokonfigurowanym przez Springa. Ręczny new ObjectMapper()/JsonMapper nie dziedziczy go — nie przechodzi przez config Springa. Więc jeśli któryś jest teraz Jacksonem 3 i serializuje, sortuje alfabetycznie + ma J3 defaulty null/dat = ten sam dryf, który zamknęliśmy globalnie, na ścieżce poza lewarem i poza ITami. Bridge jawnie robi disable(SORT_PROPERTIES_ALPHABETICALLY) — ktoś wiedział o problemie; pytanie czy ten fix trafił do tych trzech.
 
-  Dodatkowe 2 zdania do mapy (wg prośby):  
+Zadanie — dla każdego z trzech lokalnych callerów:
+1. Jaka wersja Jacksona teraz (sprawdź import: com.fasterxml.jackson = J2, tools.jackson/JsonMapper = J3)
+2. Serializuje czy tylko deserializuje
+3. Jeśli serializuje na J3: czy wyłącza SORT_PROPERTIES_ALPHABETICALLY i ogarnia null-inclusion, czy po cichu bierze J3 defaulty (= dryf)
+4. Na jakiej ścieżce siedzi (partner-facing / queue / wewnętrzne)
 
-   - 33 pliki mechaniczne to głównie package/import churn (w tym migracje namespace), Swagger 1.x → OpenAPI 3 annotations i aktualizacje kompatybilnościowe bez zmiany logiki biznesowej.  
-   - Zmiany w external/aoc (5) i external/wksme1 (2) dotyczą warstwy modeli/annotacji; to nie jest ścieżka przetwarzania Jackson bridge bean.
+Priorytet ContextResolver: ContextResolver<ObjectMapper> to JAX-RS — przy CXF najpewniej karmi serializację klientów partnerskich, poza spring-mvc ITami. Jeśli lokalny J3 bez disable-sort = partner-facing dryf, realne znalezisko. Potem WebAnalyticsQueueService (payload kolejki), na końcu JwtTokenSpringUtil.
 
-  ┌─────────────────────────────────────────────────────────────────┬────────────────────────────────────────┬──────────────────────────────────────────────────────────────────┐
-  │ Plik                                                            │ Co zmienia                             │ DLACZEGO bezpieczne + DOWÓD                                      │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/config/ObjectMapperConfig.java   │ Bridge bean dla ObjectMapper w         │ Kluczowa korekta: kontraktowe IT HTTP nie pokrywają tej ścieżki  │
-  │                                                                 │ direct-injection path                  │ (jadą przez web HttpMessageConverter). rg w src/main pokazuje,   │
-  │                                                                 │                                        │ że jedyny bean-injected caller to CekeContextSource (private     │
-  │                                                                 │                                        │ final ObjectMapper objectMapper), a pozostałe użycia to lokalne  │
-  │                                                                 │                                        │ new ObjectMapper() (ContextResolver, WebAnalyticsQueueService,   │
-  │                                                                 │                                        │ JwtTokenSpringUtil). Bridge config nie jest 1:1 z poprzednim     │
-  │                                                                 │                                        │ (wcześniej new ObjectMapper()+Jdk8Module, teraz                  │
-  │                                                                 │                                        │ JsonMapper.builder().disable(SORT_PROPERTIES_ALPHABETICALLY)).   │
-  │                                                                 │                                        │ CekeContextSource deserializuje prosty DTO (CekeContextResponse: │
-  │                                                                 │                                        │ String/long/bool, bez JavaTime/Optional). Wniosek do mapy:       │
-  │                                                                 │                                        │ nieudowodnione (direct-injection path nietestowany przez         │
-  │                                                                 │                                        │ kontraktowe ITy); blast radius ograniczony do CekeContextSource  │
-  │                                                                 │                                        │ i prostego DTO.                                                  │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ src/main/resources/application.yml                              │ spring.jackson.use-jackson2-defaults:  │ Udowodnione: verification-closed.md + baseline-provenance.md     │
-  │                                                                 │ true                                   │ (fixture’y z Boot 3.5 i porównanie na Boot 4 dla                 │
-  │                                                                 │                                        │ ordering/null/BigDecimal).                                       │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ src/main/resources/application-dev.yml                          │ zmiany profilu dev (m.in.              │ Korekta: brak use-jackson2-defaults w dev-file. Lever jest       │
-  │                                                                 │ mors.queue.enabled,                    │ ustawiony tylko w application.yml; profil dev go nie nadpisuje,  │
-  │                                                                 │ server.servlet.context-path)           │ więc dziedziczy wartość z base config. Test suite działa na      │
-  │                                                                 │                                        │ profilu test, więc application-dev.yml nie był                   │
-  │                                                                 │                                        │ „teeth-checkowany” testami kontraktowymi; tu mamy inspekcję      │
-  │                                                                 │                                        │ konfiguracji, nie dowód z IT.                                    │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ pom.xml                                                         │ piny/wersje + hibernate-validator      │ Częściowo udowodnione: rationale IT-gate jest explicite w        │
-  │                                                                 │ groupId + surefire IT gate             │ komentarzu surefire (*IT do mvn package). Rationale              │
-  │                                                                 │                                        │ pinów/koordynatów jest udokumentowane w                          │
-  │                                                                 │                                        │ compatibility-decisions.md (promowany artefakt). Dla             │
-  │                                                                 │                                        │ hibernate-validator rename jako fakt upstream: nieudowodnione    │
-  │                                                                 │                                        │ lokalnie bez zewnętrznej referencji (w mapie oznaczyć jako       │
-  │                                                                 │                                        │ decyzja oparta o dokument kompatybilności).                      │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/dictionaries/mors/adapter/mors/M │ @ConditionalOnProperty(...,            │ Udowodnione przez kod: matchIfMissing=true zachowuje domyślne    │
-  │ orsQueueListener.java                                           │ matchIfMissing = true)                 │ zachowanie przy braku flagi; zmiana to kontrola operacyjna, nie  │
-  │                                                                 │                                        │ zmiana defaultu.                                                 │
-  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
-  │ src/main/java/pl/santander/vas/dictionaries/mors/infrastructure │ analogiczny conditional gate           │ Udowodnione przez kod: jak wyżej (matchIfMissing=true).          │
-  │ /MorsRabbitMQConnectionConfiguration.java                       │                                        │                                                                  │
-  └─────────────────────────────────────────────────────────────────┴────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┘
+Osobno: potwierdź że CekeContextSource TYLKO deserializuje (nic nie serializuje przez bridge). Jeśli tak — scalar-deserialize String/long/bool stabilny J2->J3, sort/Jdk8 nieistotne, akceptujemy jako scharakteryzowany residual. Jeśli serializuje cokolwiek przez bridge -> sprawdź co i czy ordering ma znaczenie.
 
-  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Zaktualizowany plan ekstrakcji context/ (NIE wykonywany teraz)
-
-  A) Promowane do review-facing (docs/review/boot4-migration/)
-
-   1. context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md  
-   2. context/foundation/verification-closed.md  
-   3. context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md  ✅ (dodane)
-
-  B) Wypadają z pusha (z context/ + AGENTS.md)
-
-  Tak jak poprzednio, z jedną zmianą:  
-
-   - usuwamy z drop-listy pozycję context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md (bo jest promowana).  
-   - pozostała lista bez zmian (w tym AGENTS.md, pozostałe context/archive/**, context/changes/README.md, i context/foundation/** poza verification-closed.md).
+Output: tabelka 4 callerów (CekeContextSource + 3 lokalne) | wersja | serialize/deserialize | sort-handling jeśli J3 serialize | ścieżka | werdykt (bezpieczny przez kod / nieudowodnione / dryf). Werdykt "dryf" przy którymkolwiek serializującym J3 bez disable-sort = decydujemy czy fix (dodać disable-sort + null-handling jak w bridge) czy pin baseline. Zero zmian w kodzie zanim nie zobaczę tabelki.
