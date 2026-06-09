@@ -1,13 +1,153 @@
-Wątek mapperów zamknięty — wszystkie cztery bezpieczne, wiersz ObjectMapperConfig spójny. Złóż teraz finalną mapę zmian w jeden czysty dokument, gotowy jako opis MR / docs/review/boot4-migration/MIGRATION.md. Wszystkie poprawki z ostatnich rund mają być w środku:
+Boot 4 Migration Review Guide
 
-1. Sekcja behavioral-risk: wiersz ObjectMapperConfig w wersji uczciwej — bridge to J2 com.fasterxml.jackson.databind.json.JsonMapper (podtyp ObjectMapper) z disable(SORT_PROPERTIES_ALPHABETICALLY); jedyny konsument to CekeContextSource (deserialize-only, scalar DTO); dropniety Jdk8Module nieistotny dla tego konsumenta (brak typów Jdk8/Optional); bridge NIE jest dowodem pokrycia kontraktów HTTP — pokrycie webowe pochodzi z kontraktowych ITów (lever + baseline'y 3.5).
+1) TL;DR + scope
 
-2. Dołącz pod-tabelkę 4 mapperów (CekeContextSource / ContextResolver / WebAnalyticsQueueService / JwtTokenSpringUtil) z finalnymi werdyktami: wszystkie J2 com.fasterxml; deserialize-only / internal round-trip / zero-diff vs 3.5; żaden nie wnosi dryfu. To domyka pytanie "co z ręcznymi mapperami poza lewarem".
+Scope: platform migration Spring Boot 3.5.13 → 4.0.6, Spring Cloud alignment, Jackson compatibility path.
 
-3. Pozostałe wiersze (application.yml udowodniony, application-dev.yml skorygowany — lever tylko w base, dziedziczony; pom.xml -> compatibility-decisions.md promowany; oba RabbitMQ matchIfMissing=true) bez zmian.
+Reviewer punchline: real behavioral surface is concentrated in 6 files / ~79 lines.
+The rest of base..HEAD (117 files, +7531/-360) is:
 
-4. Sekcje 4-6 (3 callouty do świadomej akceptacji, co zweryfikowane, jak recenzować) + dwa zdania (33 mechaniczne, external/aoc+wksme1 GSON) bez zmian.
+ - migration mechanics (package/import churn, Swagger→OpenAPI annotation swap),
+ - safety-net tests (+2463/-177),
+ - scaffolding/provenance in context/ (+4847/-0) planned for extraction.
 
-5. Plan ekstrakcji context/: 3 promowane (baseline-provenance.md, verification-closed.md, compatibility-decisions.md), reszta + AGENTS.md wypada.
+Also: 33 mechanical PROD files are package/import/annotation churn without intended business-logic change.
+external/aoc (5) + external/wksme1 (2) are model/annotation/import updates; not the Jackson-bridge decision path.
 
-Pokaż złożony dokument w całości. NIE wykonuj jeszcze ekstrakcji ani git rm — czekamy na potwierdzenie merge strategy z GitLaba, żeby zdecydować mechanikę (squash-merge: jeden commit remove-scaffolding + opis MR; preserve-commits: rebase context/ z historii + squash meta-commitów). Zero zmian w plikach/historii na tym etapie.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+2) Behavior-preserving levers (why neutrality claim is credible)
+
+ 1. Global web lever: spring.jackson.use-jackson2-defaults: true in application.yml.
+ 2. Bridge bean for injected mapper path: explicit ObjectMapper bean with stable property-order behavior for direct-injection consumers.
+ 3. Pinned compatibility decisions in POM: rationale and constraints are documented in compatibility evidence (not “silent upgrades”).
+ 4. Proof model: Boot 4 behavior is checked against captured Boot 3.5 baseline fixtures/provenance (not Boot4-vs-Boot4).
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+3) Behavioral-risk files (with evidence, not declarations)
+
+┌──────────────────────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────┬───────────────────────────────┐
+│ File                                                                                     │ What changed                                     │ Why safe / Evidence status    │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ src/main/java/pl/santander/vas/config/ObjectMapperConfig.java                            │ Bridge bean now returns                          │ Honest scope: bridge is not   │
+│                                                                                          │ com.fasterxml.jackson.databind.json.JsonMapper   │ evidence of HTTP contract     │
+│                                                                                          │ (subtype of ObjectMapper) with                   │ coverage. HTTP coverage comes │
+│                                                                                          │ disable(SORT_PROPERTIES_ALPHABETICALLY)          │ from contract ITs + 3.5       │
+│                                                                                          │                                                  │ baselines on web converter    │
+│                                                                                          │                                                  │ path. For bridge path itself: │
+│                                                                                          │                                                  │ only confirmed consumer is    │
+│                                                                                          │                                                  │ CekeContextSource             │
+│                                                                                          │                                                  │ (deserialize-only into scalar │
+│                                                                                          │                                                  │ DTO), so dropped Jdk8Module   │
+│                                                                                          │                                                  │ is irrelevant there (no       │
+│                                                                                          │                                                  │ Jdk8/Optional types).         │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ src/main/resources/application.yml                                                       │ spring.jackson.use-jackson2-defaults: true       │ Proven: serialization vectors │
+│                                                                                          │                                                  │ pinned to 3.5 baseline (      │
+│                                                                                          │                                                  │ baseline-provenance.md) and   │
+│                                                                                          │                                                  │ closed in verification (      │
+│                                                                                          │                                                  │ verification-closed.md)       │
+│                                                                                          │                                                  │ including                     │
+│                                                                                          │                                                  │ ordering/null/BigDecimal      │
+│                                                                                          │                                                  │ surfaces.                     │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ src/main/resources/application-dev.yml                                                   │ profile-specific config churn (incl.             │ Corrected interpretation:     │
+│                                                                                          │ mors.queue.enabled, servlet context path         │ lever is only in base         │
+│                                                                                          │ migration key)                                   │ application.yml, and is       │
+│                                                                                          │                                                  │ inherited unless overridden;  │
+│                                                                                          │                                                  │ test suite runs on test       │
+│                                                                                          │                                                  │ profile, so                   │
+│                                                                                          │                                                  │ application-dev.yml is        │
+│                                                                                          │                                                  │ validated by config           │
+│                                                                                          │                                                  │ inspection (not by contract   │
+│                                                                                          │                                                  │ IT teeth-checks).             │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ pom.xml                                                                                  │ version/coord updates + surefire IT gate +       │ Evidence-backed:              │
+│                                                                                          │ validator coordinate path                        │ compatibility rationale is in │
+│                                                                                          │                                                  │ promoted                      │
+│                                                                                          │                                                  │ compatibility-decisions.md;   │
+│                                                                                          │                                                  │ surefire IT-gate intent is    │
+│                                                                                          │                                                  │ explicit in pom comments and  │
+│                                                                                          │                                                  │ makes IT net visible under    │
+│                                                                                          │                                                  │ current CI command.           │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ src/main/java/pl/santander/vas/dictionaries/mors/adapter/mors/MorsQueueListener.java     │ @ConditionalOnProperty(..., matchIfMissing =     │ Code-proof safe default:      │
+│                                                                                          │ true)                                            │ matchIfMissing=true preserves │
+│                                                                                          │                                                  │ default-on behavior when      │
+│                                                                                          │                                                  │ property absent.              │
+├──────────────────────────────────────────────────────────────────────────────────────────┼──────────────────────────────────────────────────┼───────────────────────────────┤
+│ src/main/java/pl/santander/vas/dictionaries/mors/infrastructure/MorsRabbitMQConnectionCo │ same conditional gate                            │ Code-proof safe default: same │
+│ nfiguration.java                                                                         │                                                  │ matchIfMissing=true argument. │
+└──────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────┴───────────────────────────────┘
+
+3a) Manual mapper paths outside global web lever — closure table
+
+┌────────────────────────────┬────────────────────────────────┬─────────────────────────┬───────────────────────────┬─────────────────────────────────────────────────────────┐
+│ Caller                     │ Jackson line                   │ Serialize/Deserialize   │ Path                      │ Final verdict                                           │
+├────────────────────────────┼────────────────────────────────┼─────────────────────────┼───────────────────────────┼─────────────────────────────────────────────────────────┤
+│ CekeContextSource          │ com.fasterxml injected         │ Deserialize-only (      │ token-validation internal │ Safe by code (scalar DTO; no Jdk8/Optional sensitivity) │
+│                            │ ObjectMapper bean              │ readValue)              │ path                      │                                                         │
+├────────────────────────────┼────────────────────────────────┼─────────────────────────┼───────────────────────────┼─────────────────────────────────────────────────────────┤
+│ ContextResolver            │ com.fasterxml local new        │ Deserialize-only        │ context parsing from      │ Safe by code (not serializer path)                      │
+│                            │ ObjectMapper()                 │                         │ principal/header          │                                                         │
+├────────────────────────────┼────────────────────────────────┼─────────────────────────┼───────────────────────────┼─────────────────────────────────────────────────────────┤
+│ WebAnalyticsQueueService   │ com.fasterxml local new        │ Serialize outbound      │ queue/internal            │ Safe by immutability: zero diff vs 8ea55be2 in service  │
+│                            │ ObjectMapper()                 │ queue payloads          │ integration               │ + serialized DTOs                                       │
+├────────────────────────────┼────────────────────────────────┼─────────────────────────┼───────────────────────────┼─────────────────────────────────────────────────────────┤
+│ JwtTokenSpringUtil         │ com.fasterxml local new        │ Internal write+read     │ auth internals            │ Safe by code (internal transform, no external contract  │
+│                            │ ObjectMapper()                 │ round-trip              │                           │ payload)                                                │
+└────────────────────────────┴────────────────────────────────┴─────────────────────────┴───────────────────────────┴─────────────────────────────────────────────────────────┘
+
+Conclusion: all four are com.fasterxml (J2 API line), and none introduces the feared “local J3 serializer drift”.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+4) Three conscious reviewer acceptances
+
+ 1. Surefire IT-gate in pom.xml: *IT now runs in CI path used today (mvn package), so behavioral net is no longer silently skipped.
+ 2. Dead @SecureWithTokens is pre-existing: escalated separately; not introduced by this migration.
+ 3. Safety net is test-only / zero-prod: contract/smoke fixtures and ITs are verification surface, not runtime feature change.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+5) What was verified and how
+
+ - Serialization vectors were pinned to Boot 3.5 captures and compared on Boot 4 (provenance trail in baseline document).
+ - Covered vectors include field ordering, naming, null handling, record output, enum/property mapping, BigDecimal rendering.
+ - Residuals were explicitly classified (including pre-existing SFTP test gap and accepted Double serialization residual) in closed verification evidence.
+
+Primary evidence artifacts:
+
+ - baseline-provenance.md (Boot 3.5 capture provenance and fixture lineage),
+ - verification-closed.md (closed verdict + vector-by-vector evidence),
+ - compatibility-decisions.md (version/pin/coord rationale for migration decisions).
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+6) How to review this MR efficiently
+
+ 1. Read Behavior-preserving levers first (sets intent and safety model).
+ 2. Review the 6 behavioral-risk files line-by-line.
+ 3. Validate the manual mapper closure table (answers “what about non-web mappers?”).
+ 4. Spot-check safety net on representative contracts (CODE/AOC/Agreements + BigDecimal).
+ 5. End with the 3 conscious acceptances (IT gate, pre-existing @SecureWithTokens, test-only nature).
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Context extraction plan (proposed, not executed)
+
+Promote to review-facing docs (docs/review/boot4-migration/)
+
+ 1. context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md
+ 2. context/foundation/verification-closed.md
+ 3. context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md
+
+Drop from push (after promotion)
+
+ - AGENTS.md
+ - Remaining context/archive/** (all non-promoted files)
+ - context/changes/README.md
+ - Remaining context/foundation/** (non-promoted files)
+
+No extraction/git rm performed yet; waiting for merge-strategy confirmation from GitLab.
