@@ -1,17 +1,105 @@
-Przygotowujemy migrację do human code review przed pushem. Zanim zaplanujemy reorganizację commitów i mapę zmian, potrzebuję inwentarza — nie zmieniaj jeszcze niczego, tylko pokaż:
+Gotowe — inwentarz od merge-base (06689f109a5eeb8266900c3fcb1c68d863632fdb, origin/dev) do HEAD poniżej, bez żadnych zmian w repo.
 
-1. Pełny log commitów migracji (git log --oneline) od punktu rozgałęzienia do HEAD — wszystkie ~30, z datami. Chcę zobaczyć, które to false-starty/iteracje (do squashu) a które logiczne jednostki.
+1) Pełny log commitów migracji (31 commitów, od HEAD w dół)
 
-2. Klasyfikacja całego diffu (git diff --stat od base do HEAD) w cztery wiadra — dla każdego pliku powiedz, do którego należy:
-- PROD: zmiany produkcyjne pl.santander.vas (POM, package moves, Jackson bridge, config lever, OpenRewrite/Swagger swap)
-- TEST: safety net (ITy, fixtury, capture tests jeśli zostały)
-- CONTEXT: folder context/ (scaffolding + provenance + closeout)
-- BUILD/CI: surefire/pom test config, .gitlab-ci.yml
+ 2026-06-08 d282d74b chore(migration-verification): close all streams, archive changes, roadmap complete
+ 2026-06-08 34a8b13c feat(s04-s06-contracts): contract ITs + BigDecimal pin for Boot 4 migration verification
+ 2026-06-03 39c45370 chore(archive): close offers-api-contracts
+ 2026-06-03 2d6e0053 docs(offers-api-contracts): impl-review report + plan addendum
+ 2026-06-03 db6d8163 chore(offers-api-contracts): close out plan (epilogue)
+ 2026-06-03 b0eda945 feat(offers-api-contracts): OffersApiContractIT + enforce IT gate (p2)
+ 2026-06-03 c5f71f02 feat(offers-api-contracts): baseline capture + shared test infrastructure (p1)
+ 2026-06-02 7d973320 chore(protected-vas-behavior): close out plan (epilogue)
+ 2026-06-02 51ce90d5 test(protected-vas-behavior): full-context auth & payload IT (p1)
+ 2026-06-01 f4aed19f chore(archive): close boot4-runtime-startup
+ 2026-06-01 74efdcff refactor(boot4-runtime-startup): impl-review fixes — drop Jdk8Module, fix resource leak, unify mock wiring
+ 2026-06-01 37b5d1ae chore(boot4-runtime-startup): close out plan (epilogue)
+ 2026-06-01 1574144b refactor(boot4-runtime-startup): test & config alignment (p3)
+ 2026-06-01 45832f94 refactor(boot4-runtime-startup): source migration — Swagger & package moves (p2)
+ 2026-05-29 d5bf8ae1 refactor(boot4-runtime-startup): baseline capture & POM overhaul (p1)
+ 2026-05-29 8ea55be2 chore(archive): close compatibility-decision-spikes
+ 2026-05-29 e13355b1 docs(compatibility-decision-spikes): impl review report and plan brief
+ 2026-05-29 c049ef8c chore(compatibility-decision-spikes): close out plan (epilogue)
+ 2026-05-29 c3015ffa chore(compatibility-decision-spikes): decision handoff and roadmap unblock (p5)
+ 2026-05-29 c51caac4 chore(compatibility-decision-spikes): client and integration compatibility decisions (p4)
+ 2026-05-29 db0240e9 docs(compatibility-decision-spikes): Jasypt Encrypted Config Decision (p3)
+ 2026-05-29 b084268c docs(compatibility-decision-spikes): Time-boxed Platform Blast-Radius Spike (p2)
+ 2026-05-28 b26b64f2 docs(compatibility-decision-spikes): Baseline Inputs and Decision Matrix (p1)
+ 2026-05-28 79dce723 chore(regression-proof-safety-net): address impl review findings
+ 2026-05-28 fef0b6cd chore(regression-proof-safety-net): close out plan (epilogue)
+ 2026-05-28 147e89d9 chore(regression-proof-safety-net): Net Validation and Final Handoff (p5)
+ 2026-05-28 6af4253e chore(regression-proof-safety-net): operational local contract safety net (p4)
+ 2026-05-28 ab92780c chore(regression-proof-safety-net): API and JSON contract safety net (p3)
+ 2026-05-28 ccb244fd chore(regression-proof-safety-net): add auth safety net (p2)
+ 2026-05-28 21d7dc28 docs(regression-proof-safety-net): baseline inventory and fixture policy (p1)
 
-Podaj liczbę plików i linii per wiadro.
+Szybka heurystyka pod squash: prawie wszystkie chore(archive), close out plan (epilogue), impl-review report/addendum, address impl review findings wyglądają na iteracyjne/meta; commity feat/refactor/test ... (p1..pN) to logiczne jednostki.
 
-3. W wiadrze PROD rozdziel osobno: (a) czysto mechaniczne (package moves, Swagger->OpenAPI annotation swap, wersje w POM) vs (b) behavioral-risk (Jackson bridge bean, use-jackson2-defaults, RabbitMQ @ConditionalOnProperty, hibernate-validator groupId) — to druga grupa, którą recenzent musi przejrzeć najuważniej.
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-4. Jak repo jest skonfigurowane do merge — squash-merge czy zachowuje commity? (sprawdź konwencję zespołu / ustawienia MR jeśli widoczne)
+2) Klasyfikacja całego diffu do 4 wiader (base..HEAD)
 
-Tylko inwentarz, zero zmian w historii czy plikach. Na jego podstawie zaplanujemy split commitów, co zostaje a co wypada z pusha, i strukturę mapy zmian.
+git diff --shortstat: 117 files changed, 7531 insertions(+), 360 deletions(-)
+
+┌──────────┬───────┬────────┬────────┐
+│ Bucket   │ Files │ +Lines │ -Lines │
+├──────────┼───────┼────────┼────────┤
+│ PROD     │ 39    │ 221    │ 183    │
+├──────────┼───────┼────────┼────────┤
+│ TEST     │ 41    │ 2463   │ 177    │
+├──────────┼───────┼────────┼────────┤
+│ CONTEXT  │ 37    │ 4847   │ 0      │
+├──────────┼───────┼────────┼────────┤
+│ BUILD/CI │ 0     │ 0      │ 0      │
+└──────────┴───────┴────────┴────────┘
+
+ Uwaga: AGENTS.md zaklasyfikowałem do CONTEXT (meta/onboarding).
+
+CONTEXT (37)
+AGENTS.md; wszystkie pliki pod context/archive/**, context/foundation/**, context/changes/README.md, context/archive/README.md (pełna lista: 37 plików).
+
+PROD (39)
+pom.xml, wszystkie zmiany w src/main/** z listy poniżej (pełna lista 39 plików):
+
+ - src/main/java/pl/santander/external/aoc/authorization/rest/model/* (5)
+ - src/main/java/pl/santander/external/wksme1/version/rest/client/* (2)
+ - src/main/java/pl/santander/vas/** (30)
+ - src/main/resources/application-dev.yml
+ - src/main/resources/application.yml
+
+TEST (41)
+Wszystkie zmiany w src/test/java/** i src/test/resources/** (41 plików, w tym IT-y i fixtury regression-proof-safety-net/**).
+
+BUILD/CI (0)
+Brak zmian .gitlab-ci.yml; brak osobnych plików CI w diffie.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+3) PROD: mechaniczne vs behavioral-risk
+
+Przy Twojej definicji ryzyka:
+
+(b) behavioral-risk (6 plików, +79/-66):
+
+ 1. src/main/java/pl/santander/vas/config/ObjectMapperConfig.java (Jackson bridge bean)
+ 2. src/main/resources/application-dev.yml (use-jackson2-defaults)
+ 3. src/main/resources/application.yml (config lever)
+ 4. src/main/java/pl/santander/vas/dictionaries/mors/adapter/mors/MorsQueueListener.java (@ConditionalOnProperty)
+ 5. src/main/java/pl/santander/vas/dictionaries/mors/infrastructure/MorsRabbitMQConnectionConfiguration.java (@ConditionalOnProperty)
+ 6. pom.xml (m.in. hibernate-validator groupId + wersje)
+
+(a) mechaniczne (33 pliki, +142/-117):
+
+ - package moves / importy / Swagger→OpenAPI annotation swap / zmiany kompatybilności w pozostałych plikach src/main/** (bez powyższych 6).
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+4) Merge policy (squash vs preserve commits)
+
+W tym repo lokalnie nie widać twardego wymuszenia squash:
+
+ - brak wskazówek w README/.gitlab/.github/.gitlab-ci.yml (brak matchy na squash|merge commit|rebase);
+ - lokalny git config (pull.rebase=false) dotyczy tylko lokalnego pull, nie polityki MR;
+ - ustawienie MR (GitLab Project Settings → Merge requests → Squash commits) nie jest widoczne z samego klona.
+
+Wniosek: z widocznych artefaktów nie da się jednoznacznie potwierdzić squash-only; politykę trzeba potwierdzić w ustawieniach projektu GitLab.
