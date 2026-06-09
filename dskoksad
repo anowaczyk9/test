@@ -1,13 +1,52 @@
-Mapa mocna, tabelka 4 mapperów domyka temat. Jeden realny fix + dwa drobiazgi, potem review-ready.
+Jasne — poniżej tylko żądane poprawki, reszta dokumentu bez zmian.
 
-FIX — wiersz application-dev.yml jest niespójny: plik jest w tabeli behavioral-risk, ale kolumna dowodu mówi o leverze use-jackson2-defaults, którego w tym pliku NIE MA (jest tylko w base application.yml — sam to ustaliłeś). Realne zmiany w application-dev.yml to mors.queue.enabled + klucz context-path. Recenzent zobaczy uzasadnienie o leverze z innego pliku — niespójność.
-Napraw tak:
-- application-dev.yml nie jest niezależnym prod-behavioral plikiem. mors.queue.enabled to DEV-owa strona tego samego gate'u RabbitMQ z plików 4 i 5 (MorsQueueListener/MorsRabbitMQConnectionConfiguration) — nie osobne ryzyko, tylko konfiguracja bramki. Context-path jest dev-scoped.
-- przelicz nagłówek na "5 plików prod-behavioral + 1 dev-config" ALBO zostaw 6, ale wyraźnie oznacz application-dev.yml jako config środowiska dev bez wpływu na prod runtime.
-- doprecyzuj zmianę context-path: czy to rename klucza wymuszony przez Boot 4 (behavior-preserving) czy zmiana wartości, i czy tylko dev. Pokaż faktyczny diff tej linii.
+Poprawiony nagłówek (sekcja behavioral-risk)
 
-DROBIAZG 1: lever #2 (bridge) w sekcji 2 brzmi "stable property-order behavior for direct-injection consumers" — obiecuje więcej niż sekcja 3 (jedyny konsument deserializuje skalary, property-order go nie dotyczy). Zrównaj z uczciwym brzmieniem wiersza: bridge to shim kompatybilności dla ścieżki injected-mapper, nie dowód zachowania kontraktu serializacji.
+Było: „6 plików behavioral-risk”
+Po korekcie: „5 plików prod-behavioral + 1 dev-config (application-dev.yml)”
 
-DROBIAZG 2: w scope napisz wprost "Jackson 2->3", nie "Jackson compatibility path" — to major version jump i powód istnienia levera.
+Dopisek pod nagłówkiem:
 
-Pokaż poprawiony nagłówek + wiersz application-dev.yml (z faktycznym diffem context-path) + sekcję 2. Reszta dokumentu bez zmian. To ostatnia poprawka merytoryczna — potem czekamy tylko na merge strategy z GitLaba, żeby ruszyć ekstrakcję/push.
+ application-dev.yml jest plikiem środowiska dev (nie niezależnym ryzykiem prod-runtime): zawiera dev-side ustawienia bramki RabbitMQ (mors.queue.enabled) oraz migrację klucza context-path w profilu dev.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Poprawiony wiersz application-dev.yml (sekcja 3)
+
+┌──────────────────────────────────────────┬─────────────────────────────────────┬────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Plik                                     │ Co zmienia                          │ Dlaczego bezpieczne + dowód                                                                │
+├──────────────────────────────────────────┼─────────────────────────────────────┼────────────────────────────────────────────────────────────────────────────────────────────┤
+│ src/main/resources/application-dev.yml   │ Dev-scoped config:                  │ Nie jest osobnym ryzykiem prod-runtime. mors.queue.enabled to devowa strona tej samej      │
+│                                          │ mors.queue.enabled: false +         │ bramki, którą egzekwują pliki RabbitMQ (@ConditionalOnProperty(..., matchIfMissing=true)). │
+│                                          │ migracja klucza serwera contextPath │ Zmiana context-path jest w profilu dev i ma charakter migracji klucza Boot 4 (zachowana    │
+│                                          │ → server.servlet.context-path       │ wartość /).                                                                                │
+└──────────────────────────────────────────┴─────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────┘
+
+Faktyczny diff linii context-path:
+
+ - server:
+ -   contextPath: /
+ + server:
+ +   servlet:
+ +     context-path: /
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Poprawiona sekcja 2 (Behavior-preserving levers)
+
+2) Behavior-preserving levers (why neutrality claim is credible)
+
+ 1. Global web lever: spring.jackson.use-jackson2-defaults: true w application.yml.
+ 2. Injected-mapper compatibility shim: bridge bean ObjectMapper dla ścieżek direct-injection; to mechanizm kompatybilności dla tych callerów, nie dowód pokrycia kontraktów HTTP.
+ 3. Pinned compatibility decisions in POM: rationale i ograniczenia są udokumentowane w compatibility-decisions.md.
+ 4. Proof model: zachowanie Boot 4 weryfikowane względem capture z Boot 3.5 (baseline/provenance), nie Boot4-vs-Boot4.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Drobna korekta scope (sekcja 1)
+
+W linii scope zamień:
+
+ - „Jackson compatibility path”
+ na:
+ - „Jackson 2→3”.
