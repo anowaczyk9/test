@@ -1,17 +1,69 @@
-Mapa dobra, sekcje 4-6 zostają. Trzy poprawki, jedna ważna.
+ Super — poniżej poprawiona sekcja 3 (z uczciwym statusem dla bridge path) i zaktualizowany plan ekstrakcji context/.
 
-1. WAŻNE — przerób dowód przy ObjectMapperConfig (bridge bean). Obecne uzasadnienie ("gdyby bridge rozwalał kontrakt, ITy poszłyby na czerwono") jest fałszywe: IT kontraktowe jadą przez webowy HttpMessageConverter -> autokonfigurowany mapper, NIE przez bridge bean. Bridge obsługuje direct-injection callerów (@Autowired ObjectMapper) — osobna ścieżka, której ITy nie dotykają. Nie przypisuj ITom pokrycia, którego nie mają.
-Uczciwa naprawa:
-- wygrepuj w src/main kto wstrzykuje ObjectMapper bezpośrednio (@Autowired/konstruktor), wymień ich
-- porównaj konfigurację bridge'a (moduły, features, date handling) z tym, co Boot 3.5 autokonfigurował (JavaTimeModule, WRITE_DATES_AS_TIMESTAMPS=false itd.). W 3.5 @Autowired ObjectMapper dostawał mapper Boota; bridge ma go zastąpić — pytanie czy 1:1.
-- jeśli bridge matchuje config 3.5 i/lub callerzy trywialni -> to jest dowód, wpisz konkretnie. Jeśli któryś caller serializuje nietrywialnie i nie ma testu -> wpisz "nieudowodnione (direct-injection path nietestowany przez kontraktowe ITy)". Bez udawania pokrycia.
+  3) Sześć plików behavioral-risk — poprawiona wersja
 
-2. compatibility-decisions.md (pozycja 8 w drop-liście) NIE wypada — to dowód dla pom.xml (rationale pinów: jasypt 3.0.5 vs 4.0.4 wywala Boot 4, wersje). Albo dodaj go jako 3. promowany dokument do docs/review/boot4-migration/, albo wessij kluczowe decyzje pinów do wiersza pom.xml w mapie. Reszta drop-listy OK.
+  Dodatkowe 2 zdania do mapy (wg prośby):  
 
-3. application-dev.yml: popraw "testowane przez teeth-checki" — suite leci na profilu test, nie dev; dev zweryfikowany przez inspekcję (ta sama linia). Dopisz czemu lever jest w obu plikach (redundancja czy dev nadpisuje?).
+   - 33 pliki mechaniczne to głównie package/import churn (w tym migracje namespace), Swagger 1.x → OpenAPI 3 annotations i aktualizacje kompatybilnościowe bez zmiany logiki biznesowej.  
+   - Zmiany w external/aoc (5) i external/wksme1 (2) dotyczą warstwy modeli/annotacji; to nie jest ścieżka przetwarzania Jackson bridge bean.
 
-Dodatkowo dwa zdania do mapy:
-- jednolinijkowa charakteryzacja 33 mechanicznych plików (np. "package moves com.fasterxml.jackson->tools.jackson, Swagger->OpenAPI annotation swap, import churn z wersji — bez zmian logiki") żeby recenzent ufał skanowi
-- jedno zdanie o external/aoc (5) + wksme1 (2): GSON @SerializedName, tylko zmiany importów/package, nietknięte przez migrację Jacksona
+  ┌─────────────────────────────────────────────────────────────────┬────────────────────────────────────────┬──────────────────────────────────────────────────────────────────┐
+  │ Plik                                                            │ Co zmienia                             │ DLACZEGO bezpieczne + DOWÓD                                      │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ src/main/java/pl/santander/vas/config/ObjectMapperConfig.java   │ Bridge bean dla ObjectMapper w         │ Kluczowa korekta: kontraktowe IT HTTP nie pokrywają tej ścieżki  │
+  │                                                                 │ direct-injection path                  │ (jadą przez web HttpMessageConverter). rg w src/main pokazuje,   │
+  │                                                                 │                                        │ że jedyny bean-injected caller to CekeContextSource (private     │
+  │                                                                 │                                        │ final ObjectMapper objectMapper), a pozostałe użycia to lokalne  │
+  │                                                                 │                                        │ new ObjectMapper() (ContextResolver, WebAnalyticsQueueService,   │
+  │                                                                 │                                        │ JwtTokenSpringUtil). Bridge config nie jest 1:1 z poprzednim     │
+  │                                                                 │                                        │ (wcześniej new ObjectMapper()+Jdk8Module, teraz                  │
+  │                                                                 │                                        │ JsonMapper.builder().disable(SORT_PROPERTIES_ALPHABETICALLY)).   │
+  │                                                                 │                                        │ CekeContextSource deserializuje prosty DTO (CekeContextResponse: │
+  │                                                                 │                                        │ String/long/bool, bez JavaTime/Optional). Wniosek do mapy:       │
+  │                                                                 │                                        │ nieudowodnione (direct-injection path nietestowany przez         │
+  │                                                                 │                                        │ kontraktowe ITy); blast radius ograniczony do CekeContextSource  │
+  │                                                                 │                                        │ i prostego DTO.                                                  │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ src/main/resources/application.yml                              │ spring.jackson.use-jackson2-defaults:  │ Udowodnione: verification-closed.md + baseline-provenance.md     │
+  │                                                                 │ true                                   │ (fixture’y z Boot 3.5 i porównanie na Boot 4 dla                 │
+  │                                                                 │                                        │ ordering/null/BigDecimal).                                       │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ src/main/resources/application-dev.yml                          │ zmiany profilu dev (m.in.              │ Korekta: brak use-jackson2-defaults w dev-file. Lever jest       │
+  │                                                                 │ mors.queue.enabled,                    │ ustawiony tylko w application.yml; profil dev go nie nadpisuje,  │
+  │                                                                 │ server.servlet.context-path)           │ więc dziedziczy wartość z base config. Test suite działa na      │
+  │                                                                 │                                        │ profilu test, więc application-dev.yml nie był                   │
+  │                                                                 │                                        │ „teeth-checkowany” testami kontraktowymi; tu mamy inspekcję      │
+  │                                                                 │                                        │ konfiguracji, nie dowód z IT.                                    │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ pom.xml                                                         │ piny/wersje + hibernate-validator      │ Częściowo udowodnione: rationale IT-gate jest explicite w        │
+  │                                                                 │ groupId + surefire IT gate             │ komentarzu surefire (*IT do mvn package). Rationale              │
+  │                                                                 │                                        │ pinów/koordynatów jest udokumentowane w                          │
+  │                                                                 │                                        │ compatibility-decisions.md (promowany artefakt). Dla             │
+  │                                                                 │                                        │ hibernate-validator rename jako fakt upstream: nieudowodnione    │
+  │                                                                 │                                        │ lokalnie bez zewnętrznej referencji (w mapie oznaczyć jako       │
+  │                                                                 │                                        │ decyzja oparta o dokument kompatybilności).                      │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ src/main/java/pl/santander/vas/dictionaries/mors/adapter/mors/M │ @ConditionalOnProperty(...,            │ Udowodnione przez kod: matchIfMissing=true zachowuje domyślne    │
+  │ orsQueueListener.java                                           │ matchIfMissing = true)                 │ zachowanie przy braku flagi; zmiana to kontrola operacyjna, nie  │
+  │                                                                 │                                        │ zmiana defaultu.                                                 │
+  ├─────────────────────────────────────────────────────────────────┼────────────────────────────────────────┼──────────────────────────────────────────────────────────────────┤
+  │ src/main/java/pl/santander/vas/dictionaries/mors/infrastructure │ analogiczny conditional gate           │ Udowodnione przez kod: jak wyżej (matchIfMissing=true).          │
+  │ /MorsRabbitMQConnectionConfiguration.java                       │                                        │                                                                  │
+  └─────────────────────────────────────────────────────────────────┴────────────────────────────────────────┴──────────────────────────────────────────────────────────────────┘
 
-Pokaż poprawioną sekcję 3 (zwłaszcza wiersz ObjectMapperConfig z realnym wynikiem grepa) + zaktualizowany plan ekstrakcji. Dalej zero zmian w commitach/plikach.
+  ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  Zaktualizowany plan ekstrakcji context/ (NIE wykonywany teraz)
+
+  A) Promowane do review-facing (docs/review/boot4-migration/)
+
+   1. context/archive/2026-06-08-code-consents-aoc-contracts/baseline-provenance.md  
+   2. context/foundation/verification-closed.md  
+   3. context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md  ✅ (dodane)
+
+  B) Wypadają z pusha (z context/ + AGENTS.md)
+
+  Tak jak poprzednio, z jedną zmianą:  
+
+   - usuwamy z drop-listy pozycję context/archive/2026-05-28-compatibility-decision-spikes/compatibility-decisions.md (bo jest promowana).  
+   - pozostała lista bez zmian (w tym AGENTS.md, pozostałe context/archive/**, context/changes/README.md, i context/foundation/** poza verification-closed.md).
