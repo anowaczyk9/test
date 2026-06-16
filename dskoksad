@@ -1,21 +1,27 @@
+Pobrałem prod-wzorzec przez MCP GitLaba (erste-intranet-mcp-gitlab) — MR #11 "TSMERB-9654 Podbicie Spring Boot do 4.0.0" w loyalty-program-backend, MERGED,   działa na prod. Rozstrzygnął decyzję A vs B na korzyść B.
 
-● Research dla ① zakończony, dwie ścieżki + ryzyka przedstawione. To major bump 4→5 z implikacjami legal (FSL) i prod (checksum) — zgodnie z Twoją zasadą „DECYZJA, nie automat, NIE wybieraj sam" czekam na wybór ścieżki i miejsca commita. Nic nie mutuję bez Twojej zgody.
+  WZORZEC PROD (loyalty-program-backend, SB 4.0.0, head_sha 6a5e6520):
 
-● Task complete 
-  └ User zatwierdził kolejność ①→②→③. Zacząłem ① (regresja Liquibase) zgodnie z dyscypliną dla ryzykownych zmian: research + propozycja + STOP, BEZ mutowania pom.
+   - spring-boot-starter-parent:4.0.0 (BOM celuje Liquibase 5.0.x)
+   - spring-boot-starter-liquibase (PEŁNY starter, NIE bare moduł spring-boot-liquibase), default/compile scope
+   - liquibase-core BEZ wersji → z BOM = 5.0.1 (komentarze w pom potwierdzają), ŻADNEGO pinu 4.x
+   - spring-boot-starter-webmvc (= nasz KROK 3) + spring-boot-starter-webmvc-test (test scope, potwierdza potrzebny)
+   - enforcer dependencyConvergence aktywny
+   - convergence rozwiązany NIE exclusions tylko depMgmt pinami: commons-text:1.14.0, commons-io:2.20.0 (komentarze: "liquibase.core:5.0.1 →   commons-text/commons-io")
 
-    RESEARCH WYKONANY:
+  WNIOSKI:
 
-     - Stan pom: liquibase-core pin 4.31.1 (L276-278, exclusions commons-io/text), spring-boot-liquibase scope=test (L361-362, lokus regresji), enforcer   dependencyConvergence (L410).
-     - Sedno: spring-boot-liquibase:4.0.6 w BOM SB 4.0.6 zrównany do liquibase-core:5.0.2; test→compile ściąga 5.0.2 → konflikt z pinem 4.31.1 → enforcer RED.
-     - Liquibase 5.0 release notes (web fetch): MAJOR — licencja FSL (nie Apache 2.0, ryzyko legal w banku), modularny packaging/LPM (bez extensions/drivers),   zmiana kalkulacji checksum valueDate/rawDateValue (ryzyko checksum mismatch na prod DB przy starcie), dropped Java 8/11 (my Java 25 OK).
+   - Ścieżka B wygrywa (5.0.x + pełny starter). Ścieżka A (force-pin 4.31.1 + sam moduł) NIE jest tym co działa na prod → odrzucona, ryzyko binarne realne.
+   - FSL legal mocno zderisk'owane — inna santanderowa apka już na prod z Liquibase 5.0.1.
+   - Wcześniejsze "Opcja A: moduł nie starter bo pin 4.31.1" upada — wzorzec to pełny starter (zgodne z empiryczną uwagą kolegi "bez startera Liquibase nie ruszał   po SB4").
 
-    DWIE ŚCIEŻKI przedstawione (decyzja usera):
+  PROPONOWANY DIFF (mirror, do akceptacji):
 
-     - A: zostań na 4.31.1 force-pin (dependencyManagement/exclusion) — zero ryzyka legal/prod, ALE ryzyko binarne (autoconfig 4.0.6 kompilowany pod Liquibase 5 API   ↔ core 4.31.1 → możliwy NoSuchMethodError przy starcie).
-     - B: przejdź na 5.0.2 (usuń pin) — binarnie wspierane, ALE dziedziczy FSL (legal review) + checksum change (test na kopii prod DB) + modular packaging.
-     - Rekomendacja: B, ale nie automat (wymaga review licencji FSL + test checksum na kopii prod).
+   1. spring-boot-liquibase (test, L361-362) → spring-boot-starter-liquibase (default).
+   2. liquibase-core: usuń <version>4.31.1</version> (L278) → z BOM 5.0.1.
+   3. depMgmt piny commons-text:1.14.0 + commons-io:2.20.0; zweryfikować czy nasze exclusions zostają (gate rozstrzygnie).
+   4. Gate + boot dev (dowód runtime) + smoke H2.
 
-    DWIE DECYZJE czekają na usera: (1) ścieżka A czy B; (2) commit na tym branchu (TSMERB-11013-spring-boot-4-migration = MR migracyjny) czy osobny branch — bo to   bug MR migracyjnego.
+  RESIDUAL RYZYKO: checksum na NASZEJ prod DB (ich baza ≠ nasza; Liquibase 5.0 zmienił kalkulację valueDate). Zalecam test na kopii prod DB.
 
-    Nic nie zmienione w pom, nic nie pushnięte. Po decyzji usera wykonuję fix.
+  DWIE DECYZJE czekają na usera: (1) potwierdzenie Ścieżki B mirror; (2) commit na tym branchu (TSMERB-11013, MR migracyjny) czy osobny. Po OK wykonuję. Nic nie   zmienione w pom, nic nie pushnięte.
