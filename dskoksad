@@ -1,27 +1,20 @@
-Pobrałem prod-wzorzec przez MCP GitLaba (erste-intranet-mcp-gitlab) — MR #11 "TSMERB-9654 Podbicie Spring Boot do 4.0.0" w loyalty-program-backend, MERGED,   działa na prod. Rozstrzygnął decyzję A vs B na korzyść B.
+Akceptuję Path B mirror prod-wzorca (loyalty-program). Wykonaj zmiany w pom, ale przed mergem trzymają dwie bramki: checksum na naszej bazie + potwierdzenie licencji (to druga robię równolegle).
 
-  WZORZEC PROD (loyalty-program-backend, SB 4.0.0, head_sha 6a5e6520):
+Zmiany w pom (mirror wzorca):
+1. spring-boot-liquibase (test, L361-362) → pełny spring-boot-starter-liquibase, default scope.
+2. liquibase-core: usuń <version>4.31.1</version> (L278) → z BOM 5.0.1. Zostaw deklarację dla exclusions; gate rozstrzygnie, czy zostają.
+3. depMgmt piny: commons-text:1.14.0 + commons-io:2.20.0 (jak we wzorcu, pod liquibase-core 5.0.1).
+(Spring Boot zostaje na razie 4.0.6 — bump do 4.1.0 to OSOBNA decyzja, NIE rób go w tym samym kroku.)
 
-   - spring-boot-starter-parent:4.0.0 (BOM celuje Liquibase 5.0.x)
-   - spring-boot-starter-liquibase (PEŁNY starter, NIE bare moduł spring-boot-liquibase), default/compile scope
-   - liquibase-core BEZ wersji → z BOM = 5.0.1 (komentarze w pom potwierdzają), ŻADNEGO pinu 4.x
-   - spring-boot-starter-webmvc (= nasz KROK 3) + spring-boot-starter-webmvc-test (test scope, potwierdza potrzebny)
-   - enforcer dependencyConvergence aktywny
-   - convergence rozwiązany NIE exclusions tylko depMgmt pinami: commons-text:1.14.0, commons-io:2.20.0 (komentarze: "liquibase.core:5.0.1 →   commons-text/commons-io")
+Walidacja:
+A. Pełny gate: mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package. Liczba testów + BUILD SUCCESS. Pokaż, czy enforcer convergence przeszedł po depMgmt pinach.
+B. TEETH-CHECK: 1234.50→1234.5 w infakt fixturze → InFaktCustomerBigDecimalContractIT RED, przywróć.
+C. DOWÓD RUNTIME + CHECKSUM naraz (kluczowe): najpierw potwierdź, że dev-DB ma realną historię — odpytaj DATABASECHANGELOG, czy są wiersze zaaplikowane wcześniej przez Liquibase 4.x (stare dateexecuted). Jeśli tak: zbuduj jar, odpal na runtime classpath (java -jar, profil dev) przeciw tej dev-DB. Pokaż log startu:
+   - Liquibase MUSI się teraz odezwać (czyta changelog) = autoconfig wrócił.
+   - I MUSI zwalidować istniejące changeSety BEZ "checksum mismatch"/"validation failed" = checksumy przeżyły skok 4.31.1→5.0.1 na NASZEJ historii.
+   Jeśli rzuca checksum mismatch → STOP, pokaż dokładnie które changeSety i błąd (może wymagać clearCheckSums albo obsługi wersjonowania checksumów). Jeśli dev-DB NIE ma historii 4.x (świeża) → ten test jest nieważny, zgłoś to — potrzebujemy bazy z realną historią (staging/UAT).
+D. Smoke H2 jak we wzorcu.
 
-  WNIOSKI:
+STOP, pokaż: diff pom, wynik gate (+ status convergence), teeth-check RED, log startu z fazą Liquibase i wynikiem walidacji checksumów, stan DATABASECHANGELOG.
 
-   - Ścieżka B wygrywa (5.0.x + pełny starter). Ścieżka A (force-pin 4.31.1 + sam moduł) NIE jest tym co działa na prod → odrzucona, ryzyko binarne realne.
-   - FSL legal mocno zderisk'owane — inna santanderowa apka już na prod z Liquibase 5.0.1.
-   - Wcześniejsze "Opcja A: moduł nie starter bo pin 4.31.1" upada — wzorzec to pełny starter (zgodne z empiryczną uwagą kolegi "bez startera Liquibase nie ruszał   po SB4").
-
-  PROPONOWANY DIFF (mirror, do akceptacji):
-
-   1. spring-boot-liquibase (test, L361-362) → spring-boot-starter-liquibase (default).
-   2. liquibase-core: usuń <version>4.31.1</version> (L278) → z BOM 5.0.1.
-   3. depMgmt piny commons-text:1.14.0 + commons-io:2.20.0; zweryfikować czy nasze exclusions zostają (gate rozstrzygnie).
-   4. Gate + boot dev (dowód runtime) + smoke H2.
-
-  RESIDUAL RYZYKO: checksum na NASZEJ prod DB (ich baza ≠ nasza; Liquibase 5.0 zmienił kalkulację valueDate). Zalecam test na kopii prod DB.
-
-  DWIE DECYZJE czekają na usera: (1) potwierdzenie Ścieżki B mirror; (2) commit na tym branchu (TSMERB-11013, MR migracyjny) czy osobny. Po OK wykonuję. Nic nie   zmienione w pom, nic nie pushnięte.
+Nie pushuj, nie merguj. Miejsce commita (ten branch vs osobny MR) i bramka licencyjna — decyzja po wynikach.
