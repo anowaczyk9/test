@@ -1,67 +1,16 @@
- Źródło (oficjalne, Spring Boot 4.0 reference — tabela starterów):
-  https://docs.spring.io/spring-boot/reference/using/build-systems.html
+Akceptuję Opcję A (moduł spring-boot-liquibase, nie pełny starter — respektuje jawny pin liquibase-core:4.31.1) i swap web→webmvc. Jedziemy KROK 3, z dwiema korektami i jednym dodatkiem.
 
-  Weryfikacja nazw z oficjalnej tabeli (nie z pamięci/AI-listy):
+KOREKTA 1 — nie zakładaj, że webmvc-test jest zbędny. Twoje „613 przechodzi" dotyczy stanu na starter-web, nie po swapie — to nie jest dowód na stan po zmianie. Wykonaj swap i niech gate + teeth-check rozstrzygną. Jeśli po swapie którykolwiek IT leci czerwono ALBO teeth-check zostaje zielony mimo zepsutego fixtura → pierwszy podejrzany to brakujący spring-boot-starter-webmvc-test (test scope). Wtedy STOP, dodaj go, powtórz gate.
 
-  ┌────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ Artefakt                           │ Status oficjalny                                                                                                 │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-web            │ deprecated → spring-boot-starter-webmvc ✓                                                                        │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-webmvc         │ „Starter for using Spring MVC and Tomcat" ✓                                                                      │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-webmvc-test    │ istnieje, ale niepotrzebny — pom już ma moduł spring-boot-webmvc-test (test) i 613 ITów MockMvc przechodzi       │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-webmvc-json    │ NIE ISTNIEJE — obalone. JSON wchodzi tranzytywnie z webmvc; osobno jest spring-boot-starter-json                 │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-liquibase      │ „Starter for using Liquibase database migrations" ✓                                                              │
-  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-  │ spring-boot-starter-web-services   │ deprecated → spring-boot-starter-webservices (dodatkowe znalezisko, patrz niżej)                                 │
-  └────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+KOREKTA 2 — nie duplikuj zależności Liquibase. spring-boot-liquibase jest już zadeklarowany w test scope (linia 361). Nie dodawaj drugiej deklaracji w compile — to da dwie deklaracje tego samego artefaktu. Zamiast tego ZMIEŃ scope linii 361 z test na compile (compile jest widoczny też w testach). Pokaż diff tej linii.
 
-  Zmiana 1 — główny starter web (rdzeń review)
+DODATEK — deprecated starters: zamiast łapać po jednym (web, potem web-services), zrób JEDEN sweep całego pom.xml wobec oficjalnego SB4 starter reference i wylistuj WSZYSTKIE zdeprecjonowane startery z ich nowymi nazwami. NIE zmieniaj ich teraz (poza web→webmvc w tym commicie) — tylko lista. Web-services i resztę zbatchujemy osobnym commitem „deprecated starter cleanup" potem.
 
-        <dependency>
-          <groupId>org.springframework.boot</groupId>
-   -      <artifactId>spring-boot-starter-web</artifactId>
-   +      <artifactId>spring-boot-starter-webmvc</artifactId>
-        </dependency>
+Wykonanie KROKU 3 (po pokazaniu powyższych diffów):
+1. Nałóż: spring-boot-starter-web → spring-boot-starter-webmvc; spring-boot-liquibase scope test→compile (linia 361). NIE ruszaj web-services ani innych deprecated w tym commicie.
+2. Osobny commit, pełny gate: mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package. Pokaż liczbę testów + BUILD SUCCESS.
+3. TEETH-CHECK (krytyczne): zepsuj 1234.50→1234.5 w infakt-customer-bigdecimal fixturze, potwierdź InFaktCustomerBigDecimalContractIT leci RED, przywróć. Jeśli zostaje ZIELONY → STOP, alarm (net zdegradowany, prawdopodobnie webmvc-test).
+4. Liquibase prod: start aplikacji profil dev, pokaż log — czy changelog się odpala (dowód że runtime auto-config wrócił).
+5. STOP, pokaż: diff pom, wynik gate, wynik teeth-check (red), log Liquibase, listę wszystkich deprecated starterów do osobnego commita.
 
-  Net-neutralne dla web-stacku: spring-boot-webmvc:4.0.6:compile już jest na classpath, swap tylko schodzi z deprecacji. JSON/Jackson zostaje (wchodzi z webmvc).
-
-  Zmiana 2 — Liquibase autoconfig dla PROD (sprzężone z SB4, potwierdzone empirycznie)
-
-  Rekomendacja — Opcja A (minimalna, spójna z resztą pom): dodać moduł spring-boot-liquibase w scope compile/runtime, zachowując jawny pin liquibase-core:4.31.1 z exclusions:
-
-        <dependency>
-          <groupId>org.liquibase</groupId>
-          <artifactId>liquibase-core</artifactId>
-          <version>4.31.1</version>
-          <exclusions> ... (bez zmian) ... </exclusions>
-        </dependency>
-   +    <dependency>
-   +      <groupId>org.springframework.boot</groupId>
-   +      <artifactId>spring-boot-liquibase</artifactId>
-   +    </dependency>
-
-  (Istniejąca deklaracja spring-boot-liquibase w scope test na linii 361 zostaje — test ma swoją.)
-
-  Opcja B (oficjalny starter, którego użył kolega): zamiast tego dodać spring-boot-starter-liquibase (compile). Ściąga moduł + liquibase-core. Minus: konkuruje z naszym jawnym pinem 4.31.1 i exclusions → wyższe ryzyko dependencyConvergence w maven-enforcer. Odradzam — pom celowo trzyma pin biblioteki.
-
-  Najbardziej zagrożone piny przy tej zmianie: <dependencyConvergence/> w maven-enforcer vs. liquibase-core — Opcja A nie zmienia wersji liquibase-core (ten sam BOM 4.0.6), więc konwergencja powinna przejść; zweryfikuje to gate.
-
-  Osobne znalezisko (NIE wchodzi do tego commita)
-
-  Linia 80: spring-boot-starter-web-services też jest deprecated → spring-boot-starter-webservices. Proponuję NIE mieszać tego do KROKU 3 (trzymam commit focused na review: web→webmvc + liquibase). Mogę zrobić osobny mini-commit albo zostawić na potem — Twoja decyzja.
-
-  -------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Po Twojej akceptacji wykonam (zgodnie z Twoim planem):
-
-   1. Nałożę powyższy diff (Opcja A, chyba że wskażesz B).
-   2. Osobny commit, pełny gate (mvn -B -Dspring.profiles.active=test -Djasypt.encryptor.password=dummy package).
-   3. TEETH-CHECK: celowo zepsuję 1234.50→1234.5 w fixturze infakt-customer-bigdecimal → potwierdzę, że InFaktCustomerBigDecimalContractIT leci RED (dowód, że net przeżył swap startera). Przywrócę.
-   4. Liquibase w prod: start aplikacji na profilu dev + log, czy changelog się odpala (empiryczny dowód, że autoconfig wrócił na runtime).
-   5. STOP, pokażę wynik.
-
-  Czekam na akceptację diffa (i decyzję A vs B, oraz czy fold-in web-services czy osobno). Nic nie zmieniam do tego czasu.
+Nie pushuj. Nie rób KROKU 4 (bump) — to osobna decyzja po tym.
