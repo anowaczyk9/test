@@ -1,182 +1,31 @@
-1. Bump wersji (version_bump)
+To są ulepszenia PO migracji, osobne od MR migracyjnego (który zostaje w review nietknięty). Każde = izolowany commit, walidowany pełnym gate'em. Dwa ryzykowne (webmvc, bump) idealnie jako osobne MR-y — focused review + niezależny revert.
 
- - Spring Boot 4.0.6 → 4.1.0 i Spring Cloud 2025.1.1 → 2025.1.2 — potwierdzone jako wydane i wzajemnie kompatybilne (2025.1.2 wspiera linię 4.1.x). Sensowny bump bezpieczeństwa.
- - Zmiany w pom.xml: <parent><version>4.1.0</version> (linia 17) i <spring-cloud.version>2025.1.2</spring-cloud.version> (linia 21).
- - Ryzyka do weryfikacji buildem (mvn ... package z Twoim profilem/jasypt password): - maven-enforcer-plugin masz z <dependencyConvergence/> (linie 402-418) — minor bump biblioteki transitive potrafi wywrócić convergence. To pierwszy kandydat na czerwono.
- - Masz sporo ręcznie przypiętych wersji (okhttp 4.12, gson 2.13.2, caffeine 3.2.2 z exclusion error_prone, postgresql 42.7.7). Po bumpie BOM-u part z nich może się rozjechać — zwłaszcza ten komentarz o konflikcie caffeine↔gson (linie 244-251).
- - Rekomendacja: robić jako osobny commit „tylko bump wersji", odpalić build + cały safety-net, dopiero potem cokolwiek innego. Łatwo wtedy odróżnić regresję od kolejnych zmian.
+ZASADA NADRZĘDNA: jeden krok na raz. Po każdym kroku STOP, pokaż wynik (co zmieniłeś + gate), czekaj na moje OK. NIE rób kilku kroków naraz, NIE pushuj bez zgody. Uwaga na kolejność: webmvc PRZED bumpem (4.1.0 usuwa API zdeprecjonowane w 4.0, w tym potencjalnie starter-web — najpierw zejdź z deprecacji).
 
-2. web → webmvc + starter-liquibase (webmvc_liquibase)
+KROK 1 — tanie i bezpieczne:
+- przenieś springdoc.use-fqn: true z application-dev.yml do application.yml (globalnie)
+- context-path: NAJPIERW ustal, gdzie żyje prod external.yml — repo czy OpenShift/external. Jeśli external/ops → to nie commit, tylko ticket ops (popraw martwy server.contextPath -> server.servlet.context-path, wartość / bez zmian). Jeśli w repo → popraw w commicie.
+- osobny commit, pełny gate (mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package), pokaż 613 zielonych
+- STOP
 
- - Reviewer ma rację co do kierunku: w SB4 idiomatyczny starter REST to spring-boot-starter-webmvc. Ale Twój projekt już buduje się na 4.0.6 ze spring-boot-starter-web (package gate w compatibility-decisions.md = PASS), więc to nie jest twardy breakage tylko poprawność/future-proofing.
- - Pułapka, której review nie wymienia: w SB4 starter web jest rozbity na moduły i autokonfiguracja Jacksona może wymagać osobnego spring-boot-starter-webmvc-json. Przy Twoim całym kontrakcie serializacyjnym (cały wątek use-jackson2-defaults / pin BigDecimal) zgubienie auto-configu Jacksona byłoby dokładnie tą regresją, przed którą bronią Cię ITs. Koniecznie potwierdź dokładne nazwy modułów w oficjalnym Spring Boot 4.0 Release Notes — nie polegaj na mojej liście, bo nazwy -json/-xml widziałem tylko w AI-generated odpowiedzi.
- - Liquibase: masz teraz liquibase-core (runtime) i spring-boot-liquibase tylko w test. Po przejściu na webmvc starter realnie może zabraknąć produkcyjnej autokonfiguracji — Twój kolega to potwierdził empirycznie w Programie Lojalnościowym. Rekomendacja: dodać spring-boot-starter-liquibase w scope compile.
- - Jak bezpiecznie zweryfikować: po zmianie odpal aplikację z profilem dev i sprawdź w logach startu, czy Liquibase odpala changelog i czy /v3/api-docs + serializacja BigDecimal dalej grają. To jest właśnie test, który ITs robią automatycznie — dlatego ich nie wyrzucaj przed tą zmianą.
+KROK 2 — @OpenAPIDefinition:
+- jeden globalny config (security scheme raz), usuń adnotację z 17 kontrolerów, rozróżnienie przenieś na @Tag per kontroler
+- osobny commit, gate + weryfikacja /v3/api-docs (porównaj liczbę i nazwy schematów/tagów przed i po — nie może zniknąć żaden endpoint z dokumentacji)
+- STOP
 
-3. context-path do application.yml (contextpath_main)
+KROK 3 — webmvc (RYZYKOWNY — rusza fundament samego netu):
+- NAJPIERW zweryfikuj z OFICJALNEGO Spring Boot 4.0 starter reference (nie z pamięci, nie z AI-list): dokładny zestaw zależności — spring-boot-starter-web -> spring-boot-starter-webmvc; czy potrzebny spring-boot-starter-webmvc-test (test scope) pod @AutoConfigureMockMvc, na którym stoją nasze kontraktowe ITy; spring-boot-starter-liquibase (compile, bo prod robi migracje DB). Potwierdź lub obal spring-boot-starter-webmvc-json. Pokaż propozycję diffa pom + link do źródła. CZEKAJ na moją akceptację przed wykonaniem.
+- po akceptacji: wykonaj, osobny commit, pełny gate
+- TEETH-CHECK (krytyczne, nie wystarczy zielone): po przełączeniu startera celowo zepsuj jeden kontrakt — zmień 1234.50 na 1234.5 w infakt-customer-bigdecimal fixturze — i potwierdź, że InFaktCustomerBigDecimalContractIT leci RED. Przywróć. To dowód, że net przeżył zmianę startera i nie zdegradował się do fałszywego zielonego (np. przez utratę webmvc-test i okrojony kontekst). Jeśli zostaje ZIELONY mimo zepsutego fixtura — STOP i alarm, net się rozsypał.
+- dodatkowo: start aplikacji na profilu dev + pokaż log, czy Liquibase odpala changelog (kolega potwierdził empirycznie, że bez startera Liquibase nie ruszał po SB4)
+- STOP
 
- - Stan faktyczny: application.yml (main) nie ma żadnego context-path → obowiązuje default /. Test i dev już mają poprawny SB4-owy klucz server.servlet.context-path: /.
- - Czy przenosić? Tylko jeśli prod faktycznie serwuje pod innym prefiksem niż /. Jeśli prod = /, dodawanie jawnego wpisu to czysta kosmetyka (jawność > magia defaultu — ok, ale nie jest wymagane).
- - Realne ryzyko jest odwrotne: stary klucz server.contextPath w SB4 jest cicho ignorowany (nie ma już fallbacku). Jeśli gdziekolwiek w prod-configu (external.yml/OpenShift env) został server.contextPath: /coś, to po migracji przestanie działać bez błędu. To trzeba sprawdzić w prod yml, nie w repo. Wartość „/" przenosić nie ma po co; niezerowy prefix — tak, i to do application.yml.
+KROK 4 — bump wersji (DECYZJA, nie automat — NIE wybieraj sam):
+- wypisz DWIE opcje z diffem pom i ryzykami:
+  a) 4.0.7 — ta sama linia 4.0.x, zawiera łatki security, zero usuwania API, dojrzałe. Bezpieczny bump jeśli sterownikiem jest security.
+  b) 4.1.0 — minor wydany 10.06.2026 (świeży), usuwa API zdeprecjonowane w 4.0, zmienia config properties Jacksona (może ruszyć use-jackson2-defaults), wymaga weryfikacji którego train Spring Cloud użyć (potwierdź z compatibility matrix). Większe ryzyko ekosystemu.
+- dla obu wskaż, które ręczne piny (okhttp/gson/caffeine z exclusion error_prone/postgresql) + <dependencyConvergence/> w maven-enforcer są najbardziej zagrożone
+- CZEKAJ na moją decyzję którą wersję; po decyzji wykonaj, gate
+- STOP
 
-4. Audyt @ConditionalOnProperty pod prod (prod_audit)
-
-Nie mam prod-configu w repo (ładowany przez spring.config.import: configuration/external.yml, linia 17). Mapa bramek i bezpieczny warunek:
-
-┌────────────────────────────────────┬───────────────────────────────────────────────────────────────────────┬────────────────────────────┬────────────────────┐
-│ Property                           │ Pliki                                                                 │ matchIfMissing             │ Default gdy brak   │
-│                                    │                                                                       │                            │ flagi              │
-├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────┤
-│ mors.queue.enabled                 │ MorsQueueListener, MorsRabbitMQConnectionConfiguration                │ true                       │ włączone           │
-├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────┤
-│ jwt.enabled                        │ 7 plików security/tokenvalidation (JwtTokenFilter, *ContextResolver,  │ true                       │ włączone           │
-│                                    │ aspekt)                                                               │                            │                    │
-├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────┤
-│ rabbitmq.webanalytics.enabled      │ WebAnalyticsQueueFactory, WebAnalyticsServiceFactory                  │ brak (jawne true/false)    │ wyłączone          │
-├────────────────────────────────────┼───────────────────────────────────────────────────────────────────────┼────────────────────────────┼────────────────────┤
-│ development.enableTestController   │ PrimeTestController                                                   │ brak                       │ wyłączone          │
-└────────────────────────────────────┴───────────────────────────────────────────────────────────────────────┴────────────────────────────┴────────────────────┘
-
-Co konkretnie sprawdzić w prod external.yml:
-
- 1. mors.queue.enabled — jeśli nie ma wpisu → ok (default włączone). Jeśli ktoś dał false w prod → kolejka MORS padnie. To samo dla jwt.enabled (gdyby false w prod = wyłączone filtry bezpieczeństwa! — krytyczne).
- 2. rabbitmq.webanalytics.enabled — tu musi być jawne true w prod, bo default = wyłączone. Jeśli prod oczekuje webanalytics i nie ma flagi → milcząco się nie wystartuje fabryka.
- 3. Commit fad1c0e0 (revert dev profile migration-only config) sugeruje, że dev już oczyszczono — warto potwierdzić, że ta sama higiena dotknęła prod.
-
-Wniosek z review słuszny: sama zmiana jest zdrowa (matchIfMissing=true to bezpieczny default), ale dopóki nie zweryfikujesz external.yml, najgroźniejszy jest jwt.enabled i rabbitmq.webanalytics.enabled — pierwszy ze względu na bezpieczeństwo, drugi bo ma odwrotny (wyłączony) default.
-
-
-
-
-● Przeanalizowałem prod external.yml względem mapy bramek. Werdykt audytu:
-
-  @ConditionalOnProperty — prod jest BEZPIECZNY ✅
-
-  ┌─────────────────────────────────┬──────────────────────────────────┬───────────────────────────────────┬─────────────────────────────────────────┐
-  │ Property                        │ W prod?                          │ Efekt w prod                      │ Status                                  │
-  ├─────────────────────────────────┼──────────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤
-  │ jwt.enabled                     │ brak → matchIfMissing=true       │ filtry security włączone          │ ✅ bezpieczne (to był ten krytyczny)    │
-  ├─────────────────────────────────┼──────────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤
-  │ mors.queue.enabled              │ brak → matchIfMissing=true       │ konsument MORS włączony           │ ✅ (config MORS-PROD kompletny)         │
-  ├─────────────────────────────────┼──────────────────────────────────┼───────────────────────────────────┼─────────────────────────────────────────┤
-  │ rabbitmq.webanalytics.enabled   │ true (jawnie)                    │ fabryka webanalytics włączona     │ ✅ (potrzebowała jawnego true — jest)   │
-  └─────────────────────────────────┴──────────────────────────────────┴───────────────────────────────────┴─────────────────────────────────────────┘
-
-  Czyli migracja @ConditionalOnProperty nie strzela w stopę na prodzie. Najgroźniejszy jwt.enabled jest nieustawiony → security domyślnie ON (dev ustawia false, prod świadomie nie — dobrze).
-
-  Ale wyszły 3 rzeczy obok pytania
-
-  1. context-path — potwierdzona Twoja teza, ale z haczykiem. Prod ma martwy w SB4 klucz server.contextPath: / (linia server:). W SB4 ten klucz jest cicho ignorowany — ratuje Cię tylko to, że wartość = default /. Gdyby kiedyś ktoś wpisał tu prefix, przestałby działać bez błędu. Rekomendacja: przy okazji poprawić prod na server.servlet.context-path: / (higiena), do application.yml nie ma czego przenosić (wartość to default).
-
-  2. ⚠️ Pre-existing, nie z migracji, ale poważne — zgłoś osobno:
-
-   development:
-     enableSwagger: true
-     enableTestController: true
-
-  W prod masz włączone Swagger UI oraz PrimeTestController. To znaczy, że cały wątek porządków swaggerowych z review (wydzielenie @OpenAPIDefinition, use-fqn) dotyczy też produkcji, bo dokumentacja jest tam realnie wystawiona. enableTestController: true w prod to dodatkowy smell bezpieczeństwa wart osobnego ticketa.
-
-  3. Liquibase działa na prodzie (dziedziczone z application.yml, prod tego nie nadpisuje). To bezpośrednio podbija ryzyko punktu web → webmvc: jeśli przełączenie startera zgubi autokonfigurację Liquibase, migracje DB na prodzie nie odpalą. Dlatego ten punkt waliduj startem aplikacji i sprawdzeniem logu Liquibase, zanim go zmergujesz.
-
-  Bonus (spójność): prod ma spring.autoconfigure.exclude: RabbitAutoConfiguration, a mimo to oba ficzery Rabbit (MORS + webanalytics) są włączone — bo macie własne ConnectionFactory (MorsRabbitMQConnectionConfiguration). To potwierdza, że bramki @ConditionalOnProperty są niezależne od wykluczonego autoconfigu — żadnego konfliktu tu nie ma.
-
-  -------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Podsumowując audyt: migracja warunkowych beanów jest prod-safe. Realne tematy do osobnych ticketów to Swagger/test-controller wystawione na prodzie (security) i walidacja Liquibase przy zmianie startera. Chcesz, żebym coś z tego rozpisał na konkretne zmiany/ticket, czy zostawiamy na poziomie rekomendacji?
-
-
-
-Znalazłem twardą odpowiedź w commicie, który to wprowadził (45832f94). Cytat z message:
-
-   Dev profile: disable Mors RabbitMQ (pre-existing SSL cert issue, not Boot 4 regression)
-   Runtime fixes: ObjectMapperConfig @Configuration, Mors @ConditionalOnProperty
-
-  Powód: lokalny start w profilu dev, nie testy
-
-  @ConditionalOnProperty na MorsQueueListener i MorsRabbitMQConnectionConfiguration został dodany jako wajcha do wyłączenia połączenia z brokerem MORS w profilu dev. Powód: broker MORS ma pre-existing problem z certyfikatem SSL, przez który aplikacja nie wstawała lokalnie. To nie jest ani wymóg Boot 4, ani regresja migracji — to ergonomia lokalnego startu.
-
-  Czyli odpowiedź na pytanie recenzenta „robiłeś ją pod testy?" — nie, pod dev. Flaga miała być ustawiana mors.queue.enabled: false w application-dev.yml.
-
-  Haczyk: ta wajcha jest teraz martwa
-
-  Późniejszy commit fad1c0e0 „Revert dev profile migration-only config changes" cofnął to devowe mors.queue.enabled: false. Sprawdziłem stan obecny:
-
-   - application-dev.yml — nie ustawia mors.queue.enabled
-   - application-test.yml (linie 47-57) — nie ustawia mors.queue.enabled
-   - prod external.yml — nie ustawia
-
-  Skoro nigdzie nie ma flagi, a matchIfMissing=true, to bramka wszędzie zwraca „enabled" — czyli zachowuje się identycznie jak przed migracją. Adnotacja jest teraz uśpionym hookiem: nic jej nie przełącza.
-
-  Konsekwencja praktyczna
-
-   - Bezpieczeństwo prod = zero zmian — MORS działa jak wcześniej (to potwierdza mój wcześniejszy audyt).
-   - Ale intencja (wyłączalność w dev) została cofnięta razem z revertem, więc adnotacja nie spełnia już swojego celu. Masz dwie czyste opcje:
-    1. Zostawić — tani escape hatch; gdy znów dokuczy SSL w dev, wystarczy dopisać mors.queue.enabled: false w application-dev.yml.
-   2. Usunąć — jeśli wolisz, żeby kod nie miał martwych przełączników bez pokrycia w konfiguracji.
-
-  To samo matchIfMissing=true było świadomym wyborem właśnie po to, żeby brak flagi (prod) nie zmienił niczego — i to zadziałało zgodnie z planem.
-▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
- ❯ ok to podsumuj co musimy zmienic aby odpowiedziec na te review                                                                                                   
-▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
-◐ I'm organizing the review feedback into a structured checklist with specific actions tied to each point, along with risk assessments and recommendations.
-
-● Podsumowanie — co realnie trzeba zmienić, żeby zamknąć każdy punkt review. Pogrupowane wg pewności i ryzyka.
-
-  A. Zmiany do wykonania w kodzie/configu
-
-  ┌───┬──────────────────────┬───────────────────────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────┐
-  │ # │ Punkt review         │ Konkretna zmiana                                                              │ Ryzyko                                            │
-  ├───┼──────────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────┤
-  │ 1 │ (b) use-fqn          │ Przenieść springdoc.use-fqn: true z application-dev.yml (linia 31) do         │ znikome                                           │
-  │   │                      │ application.yml — globalnie                                                   │                                                   │
-  ├───┼──────────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────┤
-  │ 2 │ (a)                  │ Utworzyć 1 globalny config (security scheme jeden raz), usunąć adnotację z 17 │ średnie (refactor 17 plików, weryfikacja          │
-  │   │ @OpenAPIDefinition   │ kontrolerów, rozróżnienie przenieść na @Tag per kontroler                     │ /v3/api-docs)                                     │
-  ├───┼──────────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────┤
-  │ 3 │ bump wersji          │ parent → 4.1.0, spring-cloud.version → 2025.1.2 (oba potwierdzone,            │ wysokie — <dependencyConvergence/> w enforcerze + │
-  │   │                      │ kompatybilne)                                                                 │ ręczne piny (okhttp/gson/caffeine) mogą się       │
-  │   │                      │                                                                               │ rozjechać                                         │
-  ├───┼──────────────────────┼───────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────┤
-  │ 4 │ web → webmvc         │ spring-boot-starter-web → spring-boot-starter-webmvc + prawdopodobnie         │ wysokie — zgubienie auto-configu Jacksona lub     │
-  │   │                      │ -webmvc-json (Jackson auto-config!) + spring-boot-starter-liquibase (compile  │ Liquibase = regresja serializacji / migracji DB   │
-  │   │                      │ scope)                                                                        │ na prodzie                                        │
-  └───┴──────────────────────┴───────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
-
-  B. Zmiany opcjonalne / higiena (review tego wprost nie żąda, ale wynika z audytu)
-
-  ┌───┬──────────────────────────┬─────────────────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────┐
-  │ # │ Temat                    │ Zmiana                                                          │ Uwaga                                                       │
-  ├───┼──────────────────────────┼─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
-  │ 5 │ context-path             │ Poprawić martwy klucz server.contextPath: / →                   │ wartość / = default, więc dziś nieszkodliwe; do             │
-  │   │                          │ server.servlet.context-path: / w prod external.yml              │ application.yml nie przenosimy (nie ma czego)               │
-  ├───┼──────────────────────────┼─────────────────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────┤
-  │ 6 │ @ConditionalOnProperty   │ Decyzja: zostawić czy usunąć. Jest dziś uśpiony (revert         │ zero zmian na prodzie tak czy siak                          │
-  │   │ MORS                     │ fad1c0e0 zdjął devowy false). Prod-safe.                        │                                                             │
-  └───┴──────────────────────────┴─────────────────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────┘
-
-  C. Same odpowiedzi w review (bez zmian w kodzie)
-
-   - use-jackson2-defaults — zostaje. Web-converter Spring 7 typowany na Jackson 3; flaga jest load-bearing, nie nadmiarowa.
-   - Jdk8Module — już usunięty (commit 74efdcff); obawa bezprzedmiotowa.
-   - @ConditionalOnProperty powód — pod dev (problem SSL brokera MORS), nie pod testy; nie wynika z SB4. Prod bezpieczny (matchIfMissing=true, nigdzie nie ustawione false).
-   - +3000 linii — to nie nowy kod: 33 mechaniczne pliki (package/import + Swagger→OpenAPI), testy safety-net i wyekstrahowany context/. Wyjaśnione w MIGRATION.md.
-   - Testy contract IT (InFakt/CodeFlow) — to dowody migracji (Boot4≡Boot3), nie testy aplikacji. Twoja decyzja: zostawić jako safety-net czy odchudzić repo.
-   - Żargon .md — wyjaśniony wcześniej (mechaniczne pliki / shim / koordynat validatora / pin BigDecimal / rezydualne ryzyko = 0).
-
-  D. ⚠️ Do osobnego ticketa (security, wykryte przy okazji, nie z migracji)
-
-   - W prod external.yml: development.enableSwagger: true i enableTestController: true → Swagger UI i PrimeTestController wystawione na produkcji. To dlatego porządki swaggerowe z review dotyczą też prod.
-
-  -------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-  Rekomendowana kolejność wdrożenia (żeby łatwo izolować regresje):
-
-   1. Najpierw tanie i bezpieczne: #1 (use-fqn) + #5 (context-path) — osobny commit.
-   2. #2 (@OpenAPIDefinition) — osobny commit, weryfikacja /v3/api-docs.
-   3. #3 (bump wersji) — osobny commit, pełny build + safety-net.
-   4. #4 (webmvc + liquibase) — osobny commit, start aplikacji + log Liquibase + sprawdzenie serializacji BigDecimal.
-   5. #6 — decyzja porządkowa na końcu.
-
-  Każdy krok bramkowany istniejącym safety-netem (ITs) — dlatego #4 rób przed ewentualnym odchudzaniem testów, nie po.
-
-  Chcesz, żebym zaczął od kroku 1 (use-fqn + context-path) i szedł w górę z weryfikacją buildem po każdym?
+Zacznij od KROKU 1. Po nim STOP i pokaż wynik.
