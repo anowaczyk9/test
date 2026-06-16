@@ -1,17 +1,27 @@
-Docs zielone, sweep context/ czysty. Push + MR — odpal TYLKO jeśli squash jest włączony dla tego MR (Settings -> Merge requests -> Squash commits, albo wybrany przy tworzeniu MR). Jeśli zespół ZACHOWUJE commity -> NIE pushuj, daj znać, robimy wariant rebase.
+Hej! Przejrzałem kod i przyznam, że nie wiem do końca jak się zabrać za recenzję 
+ 
+Same zmiany:
+ 
+Podbicie adnotacji swaggerowych bardzo ok - tu można by było zrobić jeszcze 2 kolejne zmiany porządkowe przy okazji, za które chcę zabrać się już pół roku i nigdy nie ma czasu: 
 
-Krok 0 (szybka domiatka): grep -n "record" docs/review/boot4-migration/verification-closed.md — jeśli AocData jest gdzieś jeszcze nazwane "record DTO" (np. w tabeli Auth and HTTP contract surfaces), popraw na "class DTO"/"DTO" (AocData to public class, nie record). Pokaż wynik grepa.
+a) wydzielenie @OpenAPIDefinition do osobnej konfiguracji, bo ono powinno być tylko jedno na projekt, a jest w każdym kontrolerze inne i te adnotacje ze sobą konkurują
 
-Krok 1: push brancza na remote.
-
-Krok 2: otwórz MR. Tytuł: "Spring Boot 3.5.13 -> 4.0.6 migration + serialization verification net".
-
-Krok 3: opis MR (wyciągnięty z MIGRATION.md, nie chowany w pliku):
-- Punchline: realna powierzchnia behawioralna to 5 plików prod-behavioral + 1 dev-config, ~79 linii; reszta widocznego diffu (84 files, +3522/-360) to mechanika (package moves, Swagger->OpenAPI) + safety net testowy + 3 dokumenty dowodowe. Pełna mapa: docs/review/boot4-migration/MIGRATION.md
-- Sekcja "jak recenzować": levers -> 6 plików -> tabela domknięcia mapperów -> spot-check netu -> 3 świadome akceptacje
-- Trzy świadome akceptacje: surefire IT-gate w pom.xml (ITy teraz w CI), martwy @SecureWithTokens (pre-existing, nie wprowadzony przez migrację), safety net test-only
-- Linki: docs/review/boot4-migration/{baseline-provenance.md, verification-closed.md, compatibility-decisions.md}
-
-Krok 4: pokaż URL MR + potwierdź że pipeline CI ruszył ORAZ że surefire IT-gate faktycznie odpala ITy na serwerze (chcę widzieć 613 testów w pipeline, nie tylko lokalnie).
-
-Nie scalaj MR — tylko otwórz i pokaż status pipeline.
+b) dodanie do application.yml springdoc.use-fqn: true - mamy trochę zduplikowanych nazw klas jako DTO i one też ze sobą konkurują w Swaggerze - jak się da fqn to pokazuje poprawne DTO w dokumentacji
+Zmiana ObjectMapper na JsonMapper - ok, przy czym nie wiem czy tutaj nawet potrzebna jest ta wajcha "use-jackson2-defaults", i czy można swobodnie wywalić Jdk8Module - w .md AI pisze o tym, że nie ma typów Jdk8 (Optional itd.) użytych w DTO do mapowań i że przez to niepotrzebne, no ale mam mieszane uczucia co do tego
+@ConditionalOnProperty - to nie wynika z przejścia na Spring Boot 4 i o ile to jest zmiana zdrowa (robiłeś ją pod testy?) o tyle trzeba by było przejrzeć konfigurację prod, czy sobie tutaj w stopę nie strzelamy
+Zmiana context-path w application-test.yml - trzeba będzie przenosić do application.yml?
+Zmiany w pom - od tamtego czasu wyszły nowe wersje znów, łatające podatności (Spring Boot 4.1.0, Spring Cloud 2025.1.2) - warto podciągnąć  Obecna "legalna" zależność dla bycia serwerem REST-api to spring-boot-starter-webmvc, nie spring-boot-starter-web (Modularizing Spring Boot, Spring Boot 4.0 Migration Guide, screen poniżej) i jeśli to zmienisz, to brakuje też spring-boot-starter-liquibase (Liquibase mi bez tego nie działało w Programie Lojalnościowym po przejściu na SB 4).
+ 
+ 
+... i z tego co widzę nic więcej w kodach się nie zmieniło? Nie rozumiem w takim razie tych +3000 dodatkowych linii  Część testów jako zwiększenie pokrycia można zostawić, ale czy sporo z nich zamiast testować aplikację nie testuje po prostu, czy Spring Boot 4 pokrywa się funkcjonalnie z 3 (np. InFaktCustomerBigDecimalContractIT, CodeFlowContractIT)? Chyba że umieściłeś je tylko jako dowód na pomyślność migracji, to ok, ale nie wiem czy bym je wszystkie w repo zostawiał. Druga opinia Chwasta Paweł ?
+ 
+A przy tych .md czuję się głupi  Nie wiem czym są:
+mechaniczne pliki
+shim kompatybilności
+ścieżka koordynatu validatora
+pin BigDecimal
+...
+ 
+Ogólnie zakładam, że jeśli "Rezydualne ryzyko serializacji = 0" to znaczy, że jest ok i wierzę w to : )
+Level up your Java code and explore what Spring can do for you.
+ 
