@@ -1,49 +1,17 @@
-Istotne znalezisko — premisa Opcji A („respektuje pin 4.31.1") okazała się niewykonalna. Sprawdziłem też, czemu pin istniał.
+Opcja 1 — rozdziel. Ten commit = TYLKO web→webmvc. Cofnij zmianę scope Liquibase (wróć do test scope na linii 361). Liquibase prod-autoconfig robimy osobno, bo to realnie major bump 4→5.
 
-  STOP — KROK 3 napotkał konflikt wymagający Twojej decyzji
+Wykonaj:
+1. spring-boot-starter-web → spring-boot-starter-webmvc (jedyna zmiana w tym commicie). Liquibase BEZ zmian (zostaje test scope).
+2. Osobny commit, pełny gate: mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package. Pokaż liczbę testów + BUILD SUCCESS.
+3. TEETH-CHECK: zepsuj 1234.50→1234.5 w infakt-customer-bigdecimal fixturze, potwierdź InFaktCustomerBigDecimalContractIT leci RED, przywróć. Jeśli zostaje ZIELONY → STOP, alarm (net zdegradowany, prawdopodobnie brak webmvc-test).
 
-  Co się stało: zmiana scope spring-boot-liquibase na compile wywala maven-enforcer DependencyConvergence:
+4. SONDA KRYTYCZNA — czy prod ma auto-config Liquibase. spring-boot-liquibase jest TYLKO w test scope, więc na runtime aplikacji może go nie być. Uruchom aplikację przez RUNTIME classpath (mvn spring-boot:run albo zbudowany jar — NIE IDE z test classpath, bo to zafałszuje), profil dev, i sprawdź log startu: czy Liquibase odpala changelog? 
+- Jeśli TAK odpala → auto-config jest na runtime, prod OK, Liquibase-na-prod to future-proofing (osobny follow-up).
+- Jeśli NIE odpala (brak logów Liquibase przy starcie) → POTWIERDZONA REGRESJA: migracja zabrała prodowi auto-config Liquibase (moduł tylko test scope). To NIE jest follow-up, to bug migracji psujący prod DB migrations — wraca do MR migracyjnego przed mergem. STOP i zgłoś to wyraźnie.
+Pokaż dokładny log startu (fragment z Liquibase albo jego brak).
 
-   liquibase-core:4.31.1  ← nasz jawny pin
-   liquibase-core:5.0.2   ← wymuszany przez spring-boot-liquibase:4.0.6 (BOM Boot 4.0.6)
+5. STOP, pokaż: diff pom (tylko webmvc), wynik gate, wynik teeth-check (red), i log startu runtime z sekcją Liquibase (lub jej brakiem). 
 
-  Moduł autokonfiguracji spring-boot-liquibase:4.0.6 jest zbudowany/zrównany z BOM-em na Liquibase 5.0.2. Nie da się go dołożyć na runtime i jednocześnie utrzymać 4.31.1 bez walki z BOM-em. Build pada na fazie validate.
+Osobno na potem (NIE teraz): Liquibase prod-autoconfig = bump 4→5 (BOM wymusza 5.0.2). Pin 4.31.1 nie jest load-bearing, więc align do 5.0.2 jest OK kierunkowo — ale to major, więc przy tym osobnym commicie sprawdź release notes Liquibase 5.0 pod kątem zmian łamiących changelog, nie polegaj na samym zielonym smoke teście.
 
-  Dlaczego istniał pin 4.31.1 (git): to był rutynowy bump z 4.25.1 w commicie 2e299a6b „TSMESL-7649 database properties fix" — NIE twarda decyzja bezpieczeństwa/kompatybilności. Exclusions to tylko przycinanie tranzytywnych (commons-io, commons-lang3). Czyli pin nie jest load-bearing.
-
-  Webmvc swap sam w sobie jest czysty — konflikt pochodzi WYŁĄCZNIE ze zmiany scope Liquibase. Te dwie rzeczy to dwa niezależne ryzyka.
-
-  Trzy drogi:
-
-  ┌─────────────────┬────────────────────────────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────┐
-  │ Opcja           │ Co robi                                                                            │ Ryzyko                                                │
-  ├─────────────────┼────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────┤
-  │ 1. Rozdziel     │ Ten commit = tylko web→webmvc. Cofam zmianę scope Liquibase. Prod-autoconfig       │ Najniższe. Spójne z Twoim „dwa ryzykowne jako osobne  │
-  │ (rekomenduję)   │ Liquibase robimy osobnym commitem, bo ciągnie za sobą bump Liquibase 4→5 — osobne  │ MR-y".                                                │
-  │                 │ ryzyko, osobny revert.                                                             │                                                       │
-  ├─────────────────┼────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────┤
-  │ 2. Zbatchuj +   │ web→webmvc + zdejmij <version>4.31.1</version>, niech BOM zarządza → Liquibase     │ Major Liquibase 4→5 w tym samym commicie. Walidują:   │
-  │ align 5.0.2     │ 5.0.2.                                                                             │ LiquibaseJpaRegressionSmokeTest + gate + log dev.     │
-  ├─────────────────┼────────────────────────────────────────────────────────────────────────────────────┼───────────────────────────────────────────────────────┤
-  │ 3. Zbatchuj +   │ web→webmvc + <exclusion> liquibase-core na spring-boot-liquibase.                  │ Autoconfig pisany pod 5.x na runtime 4.31.1 → możliwa │
-  │ force 4.31.1    │                                                                                    │ niekompatybilność teraz/przy bumpach. Kruche (walka z │
-  │                 │                                                                                    │ BOM). Odradzam.                                       │
-  └─────────────────┴────────────────────────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────┘
-
-  Moja rekomendacja: Opcja 1 — rozdzielić. Webmvc swap przejdzie gate + teeth-check czysto; prod-Liquibase (z bumpem 4→5) dostaje własną, świadomą decyzję i własny revert.
-
-○ Asking user KROK 3 — konflikt konwergencji Liquibase. Pin 4.31.1 okaz...
-
-
-
- Copilot needs information.                                                                                                                                         
- KROK 3 — konflikt konwergencji Liquibase. Pin 4.31.1 okazał się nieobronny przy module spring-boot-liquibase (BOM wymusza 5.0.2). Jak chcesz to rozegrać? (nic nie 
-  commituję, zmiany tylko w working tree)                                                                                                                           
-                                                                                                                                                                    
- Wybór drogi:                                                                                                                                                       
- Opcja 1 = rozdziel (tylko webmvc teraz, Liquibase osobno). Opcja 2 = batch + align Liquibase 5.0.2. Opcja 3 = batch + force 4.31.1 exclusion.                      
- ❯ Opcja 1 — rozdziel: ten commit tylko web→webmvc, Liquibase osobno (rekomendowane)                                                                                
-   Opcja 2 — batch: web→webmvc + Liquibase align do 5.0.2 (bump 4→5)                                                                                                
-   Opcja 3 — batch: web→webmvc + force 4.31.1 przez exclusion                                                                                                       
-   Other (type your answer)                                                                                                                                         
-                                        
+Nie pushuj. Nie rób bumpu Spring Boot (KROK 4).
