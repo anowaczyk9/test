@@ -1,4 +1,21 @@
-Odpal go na dev przeciw dev-DB i zapisz log:
-java "-Dspring.profiles.active=dev" "-Djasypt.encryptor.password=<hasło-dev>" -jar target\<nazwa>.jar > start40.log 2>&1
-Przeszukaj log:
-findstr /i "liquibase changelog changeset" start40.log
+
+● Research dla ① zakończony, dwie ścieżki + ryzyka przedstawione. To major bump 4→5 z implikacjami legal (FSL) i prod (checksum) — zgodnie z Twoją zasadą „DECYZJA, nie automat, NIE wybieraj sam" czekam na wybór ścieżki i miejsca commita. Nic nie mutuję bez Twojej zgody.
+
+● Task complete 
+  └ User zatwierdził kolejność ①→②→③. Zacząłem ① (regresja Liquibase) zgodnie z dyscypliną dla ryzykownych zmian: research + propozycja + STOP, BEZ mutowania pom.
+
+    RESEARCH WYKONANY:
+
+     - Stan pom: liquibase-core pin 4.31.1 (L276-278, exclusions commons-io/text), spring-boot-liquibase scope=test (L361-362, lokus regresji), enforcer   dependencyConvergence (L410).
+     - Sedno: spring-boot-liquibase:4.0.6 w BOM SB 4.0.6 zrównany do liquibase-core:5.0.2; test→compile ściąga 5.0.2 → konflikt z pinem 4.31.1 → enforcer RED.
+     - Liquibase 5.0 release notes (web fetch): MAJOR — licencja FSL (nie Apache 2.0, ryzyko legal w banku), modularny packaging/LPM (bez extensions/drivers),   zmiana kalkulacji checksum valueDate/rawDateValue (ryzyko checksum mismatch na prod DB przy starcie), dropped Java 8/11 (my Java 25 OK).
+
+    DWIE ŚCIEŻKI przedstawione (decyzja usera):
+
+     - A: zostań na 4.31.1 force-pin (dependencyManagement/exclusion) — zero ryzyka legal/prod, ALE ryzyko binarne (autoconfig 4.0.6 kompilowany pod Liquibase 5 API   ↔ core 4.31.1 → możliwy NoSuchMethodError przy starcie).
+     - B: przejdź na 5.0.2 (usuń pin) — binarnie wspierane, ALE dziedziczy FSL (legal review) + checksum change (test na kopii prod DB) + modular packaging.
+     - Rekomendacja: B, ale nie automat (wymaga review licencji FSL + test checksum na kopii prod).
+
+    DWIE DECYZJE czekają na usera: (1) ścieżka A czy B; (2) commit na tym branchu (TSMERB-11013-spring-boot-4-migration = MR migracyjny) czy osobny branch — bo to   bug MR migracyjnego.
+
+    Nic nie zmienione w pom, nic nie pushnięte. Po decyzji usera wykonuję fix.
