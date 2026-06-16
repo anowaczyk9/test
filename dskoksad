@@ -1,31 +1,67 @@
-To są ulepszenia PO migracji, osobne od MR migracyjnego (który zostaje w review nietknięty). Każde = izolowany commit, walidowany pełnym gate'em. Dwa ryzykowne (webmvc, bump) idealnie jako osobne MR-y — focused review + niezależny revert.
+ Źródło (oficjalne, Spring Boot 4.0 reference — tabela starterów):
+  https://docs.spring.io/spring-boot/reference/using/build-systems.html
 
-ZASADA NADRZĘDNA: jeden krok na raz. Po każdym kroku STOP, pokaż wynik (co zmieniłeś + gate), czekaj na moje OK. NIE rób kilku kroków naraz, NIE pushuj bez zgody. Uwaga na kolejność: webmvc PRZED bumpem (4.1.0 usuwa API zdeprecjonowane w 4.0, w tym potencjalnie starter-web — najpierw zejdź z deprecacji).
+  Weryfikacja nazw z oficjalnej tabeli (nie z pamięci/AI-listy):
 
-KROK 1 — tanie i bezpieczne:
-- przenieś springdoc.use-fqn: true z application-dev.yml do application.yml (globalnie)
-- context-path: NAJPIERW ustal, gdzie żyje prod external.yml — repo czy OpenShift/external. Jeśli external/ops → to nie commit, tylko ticket ops (popraw martwy server.contextPath -> server.servlet.context-path, wartość / bez zmian). Jeśli w repo → popraw w commicie.
-- osobny commit, pełny gate (mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package), pokaż 613 zielonych
-- STOP
+  ┌────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ Artefakt                           │ Status oficjalny                                                                                                 │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-web            │ deprecated → spring-boot-starter-webmvc ✓                                                                        │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-webmvc         │ „Starter for using Spring MVC and Tomcat" ✓                                                                      │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-webmvc-test    │ istnieje, ale niepotrzebny — pom już ma moduł spring-boot-webmvc-test (test) i 613 ITów MockMvc przechodzi       │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-webmvc-json    │ NIE ISTNIEJE — obalone. JSON wchodzi tranzytywnie z webmvc; osobno jest spring-boot-starter-json                 │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-liquibase      │ „Starter for using Liquibase database migrations" ✓                                                              │
+  ├────────────────────────────────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+  │ spring-boot-starter-web-services   │ deprecated → spring-boot-starter-webservices (dodatkowe znalezisko, patrz niżej)                                 │
+  └────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-KROK 2 — @OpenAPIDefinition:
-- jeden globalny config (security scheme raz), usuń adnotację z 17 kontrolerów, rozróżnienie przenieś na @Tag per kontroler
-- osobny commit, gate + weryfikacja /v3/api-docs (porównaj liczbę i nazwy schematów/tagów przed i po — nie może zniknąć żaden endpoint z dokumentacji)
-- STOP
+  Zmiana 1 — główny starter web (rdzeń review)
 
-KROK 3 — webmvc (RYZYKOWNY — rusza fundament samego netu):
-- NAJPIERW zweryfikuj z OFICJALNEGO Spring Boot 4.0 starter reference (nie z pamięci, nie z AI-list): dokładny zestaw zależności — spring-boot-starter-web -> spring-boot-starter-webmvc; czy potrzebny spring-boot-starter-webmvc-test (test scope) pod @AutoConfigureMockMvc, na którym stoją nasze kontraktowe ITy; spring-boot-starter-liquibase (compile, bo prod robi migracje DB). Potwierdź lub obal spring-boot-starter-webmvc-json. Pokaż propozycję diffa pom + link do źródła. CZEKAJ na moją akceptację przed wykonaniem.
-- po akceptacji: wykonaj, osobny commit, pełny gate
-- TEETH-CHECK (krytyczne, nie wystarczy zielone): po przełączeniu startera celowo zepsuj jeden kontrakt — zmień 1234.50 na 1234.5 w infakt-customer-bigdecimal fixturze — i potwierdź, że InFaktCustomerBigDecimalContractIT leci RED. Przywróć. To dowód, że net przeżył zmianę startera i nie zdegradował się do fałszywego zielonego (np. przez utratę webmvc-test i okrojony kontekst). Jeśli zostaje ZIELONY mimo zepsutego fixtura — STOP i alarm, net się rozsypał.
-- dodatkowo: start aplikacji na profilu dev + pokaż log, czy Liquibase odpala changelog (kolega potwierdził empirycznie, że bez startera Liquibase nie ruszał po SB4)
-- STOP
+        <dependency>
+          <groupId>org.springframework.boot</groupId>
+   -      <artifactId>spring-boot-starter-web</artifactId>
+   +      <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
 
-KROK 4 — bump wersji (DECYZJA, nie automat — NIE wybieraj sam):
-- wypisz DWIE opcje z diffem pom i ryzykami:
-  a) 4.0.7 — ta sama linia 4.0.x, zawiera łatki security, zero usuwania API, dojrzałe. Bezpieczny bump jeśli sterownikiem jest security.
-  b) 4.1.0 — minor wydany 10.06.2026 (świeży), usuwa API zdeprecjonowane w 4.0, zmienia config properties Jacksona (może ruszyć use-jackson2-defaults), wymaga weryfikacji którego train Spring Cloud użyć (potwierdź z compatibility matrix). Większe ryzyko ekosystemu.
-- dla obu wskaż, które ręczne piny (okhttp/gson/caffeine z exclusion error_prone/postgresql) + <dependencyConvergence/> w maven-enforcer są najbardziej zagrożone
-- CZEKAJ na moją decyzję którą wersję; po decyzji wykonaj, gate
-- STOP
+  Net-neutralne dla web-stacku: spring-boot-webmvc:4.0.6:compile już jest na classpath, swap tylko schodzi z deprecacji. JSON/Jackson zostaje (wchodzi z webmvc).
 
-Zacznij od KROKU 1. Po nim STOP i pokaż wynik.
+  Zmiana 2 — Liquibase autoconfig dla PROD (sprzężone z SB4, potwierdzone empirycznie)
+
+  Rekomendacja — Opcja A (minimalna, spójna z resztą pom): dodać moduł spring-boot-liquibase w scope compile/runtime, zachowując jawny pin liquibase-core:4.31.1 z exclusions:
+
+        <dependency>
+          <groupId>org.liquibase</groupId>
+          <artifactId>liquibase-core</artifactId>
+          <version>4.31.1</version>
+          <exclusions> ... (bez zmian) ... </exclusions>
+        </dependency>
+   +    <dependency>
+   +      <groupId>org.springframework.boot</groupId>
+   +      <artifactId>spring-boot-liquibase</artifactId>
+   +    </dependency>
+
+  (Istniejąca deklaracja spring-boot-liquibase w scope test na linii 361 zostaje — test ma swoją.)
+
+  Opcja B (oficjalny starter, którego użył kolega): zamiast tego dodać spring-boot-starter-liquibase (compile). Ściąga moduł + liquibase-core. Minus: konkuruje z naszym jawnym pinem 4.31.1 i exclusions → wyższe ryzyko dependencyConvergence w maven-enforcer. Odradzam — pom celowo trzyma pin biblioteki.
+
+  Najbardziej zagrożone piny przy tej zmianie: <dependencyConvergence/> w maven-enforcer vs. liquibase-core — Opcja A nie zmienia wersji liquibase-core (ten sam BOM 4.0.6), więc konwergencja powinna przejść; zweryfikuje to gate.
+
+  Osobne znalezisko (NIE wchodzi do tego commita)
+
+  Linia 80: spring-boot-starter-web-services też jest deprecated → spring-boot-starter-webservices. Proponuję NIE mieszać tego do KROKU 3 (trzymam commit focused na review: web→webmvc + liquibase). Mogę zrobić osobny mini-commit albo zostawić na potem — Twoja decyzja.
+
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+  Po Twojej akceptacji wykonam (zgodnie z Twoim planem):
+
+   1. Nałożę powyższy diff (Opcja A, chyba że wskażesz B).
+   2. Osobny commit, pełny gate (mvn -B -Dspring.profiles.active=test -Djasypt.encryptor.password=dummy package).
+   3. TEETH-CHECK: celowo zepsuję 1234.50→1234.5 w fixturze infakt-customer-bigdecimal → potwierdzę, że InFaktCustomerBigDecimalContractIT leci RED (dowód, że net przeżył swap startera). Przywrócę.
+   4. Liquibase w prod: start aplikacji na profilu dev + log, czy changelog się odpala (empiryczny dowód, że autoconfig wrócił na runtime).
+   5. STOP, pokażę wynik.
+
+  Czekam na akceptację diffa (i decyzję A vs B, oraz czy fold-in web-services czy osobno). Nic nie zmieniam do tego czasu.
