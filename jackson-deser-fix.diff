@@ -1,0 +1,197 @@
+diff --git a/src/main/java/pl/santander/vas/consents/model/GetAgreementResponseDto.java b/src/main/java/pl/santander/vas/consents/model/GetAgreementResponseDto.java
+index e37f79d0..daf7f8b3 100644
+--- a/src/main/java/pl/santander/vas/consents/model/GetAgreementResponseDto.java
++++ b/src/main/java/pl/santander/vas/consents/model/GetAgreementResponseDto.java
+@@ -4,9 +4,11 @@ import java.util.List;
+ import lombok.AllArgsConstructor;
+ import lombok.Builder;
+ import lombok.Data;
++import lombok.NoArgsConstructor;
+ 
+ @Data
+ @AllArgsConstructor
++@NoArgsConstructor
+ @Builder
+ public class GetAgreementResponseDto {
+ 
+diff --git a/src/main/java/pl/santander/vas/domainaservices/agreements/model/Agreement.java b/src/main/java/pl/santander/vas/domainaservices/agreements/model/Agreement.java
+index 452d977f..999a4d2f 100644
+--- a/src/main/java/pl/santander/vas/domainaservices/agreements/model/Agreement.java
++++ b/src/main/java/pl/santander/vas/domainaservices/agreements/model/Agreement.java
+@@ -2,9 +2,11 @@ package pl.santander.vas.domainaservices.agreements.model;
+ 
+ import lombok.AllArgsConstructor;
+ import lombok.Data;
++import lombok.NoArgsConstructor;
+ 
+ @Data
+ @AllArgsConstructor
++@NoArgsConstructor
+ public class Agreement {
+ 
+     private String channel;
+diff --git a/src/main/java/pl/santander/vas/domainaservices/common/ResponseErrorDTO.java b/src/main/java/pl/santander/vas/domainaservices/common/ResponseErrorDTO.java
+index 7580240b..2fd68090 100644
+--- a/src/main/java/pl/santander/vas/domainaservices/common/ResponseErrorDTO.java
++++ b/src/main/java/pl/santander/vas/domainaservices/common/ResponseErrorDTO.java
+@@ -2,8 +2,10 @@ package pl.santander.vas.domainaservices.common;
+ 
+ import java.time.LocalDateTime;
+ import lombok.Data;
++import lombok.NoArgsConstructor;
+ 
+ @Data
++@NoArgsConstructor
+ public class ResponseErrorDTO {
+ 
+     private String errorCode;
+diff --git a/src/main/java/pl/santander/vas/domainaservices/customerrelationship/model/Relationship.java b/src/main/java/pl/santander/vas/domainaservices/customerrelationship/model/Relationship.java
+index 8b51a7ab..927fe7a4 100644
+--- a/src/main/java/pl/santander/vas/domainaservices/customerrelationship/model/Relationship.java
++++ b/src/main/java/pl/santander/vas/domainaservices/customerrelationship/model/Relationship.java
+@@ -2,8 +2,10 @@ package pl.santander.vas.domainaservices.customerrelationship.model;
+ 
+ import java.time.LocalDate;
+ import lombok.Data;
++import lombok.NoArgsConstructor;
+ 
+ @Data
++@NoArgsConstructor
+ public class Relationship {
+ 
+     private String relationshipType;
+diff --git a/src/test/java/pl/santander/vas/domainaservices/JacksonDeserializationRegressionTest.java b/src/test/java/pl/santander/vas/domainaservices/JacksonDeserializationRegressionTest.java
+new file mode 100644
+index 00000000..ffc403aa
+--- /dev/null
++++ b/src/test/java/pl/santander/vas/domainaservices/JacksonDeserializationRegressionTest.java
+@@ -0,0 +1,129 @@
++package pl.santander.vas.domainaservices;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.assertThatCode;
++
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.SpringBootConfiguration;
++import org.springframework.boot.test.autoconfigure.json.JsonTest;
++import pl.santander.vas.consents.model.GetAgreementResponseDto;
++import pl.santander.vas.domainaservices.agreements.model.Agreement;
++import pl.santander.vas.domainaservices.customerrelationship.model.RelationshipResponseDTO;
++import tools.jackson.databind.json.JsonMapper;
++
++/**
++ * Regression guard for the Spring Boot 4 / Jackson 3 deserialization break.
++ *
++ * <p>Jackson 3 (the HTTP/Feign mapper in Boot 4) no longer infers a hand-written
++ * or all-args-only constructor as a creator the way Jackson 2 did. A DTO that is a
++ * deserialization target therefore fails at runtime with "Cannot construct instance
++ * ... no Creators, like default constructor, exist" unless it has a no-arg
++ * constructor, a {@code @JsonCreator}, or is a record.
++ *
++ * <p>This test exercises the real Spring-configured {@code JsonMapper} (via the
++ * {@code @JsonTest} slice, honouring {@code spring.jackson.use-jackson2-defaults}),
++ * NOT a plain {@code JsonMapper.builder().build()} — a plain mapper does NOT
++ * reproduce the failure and would give a false-green.
++ *
++ * <p>Covered classes are the genuine deserialization targets that broke and were
++ * fixed with {@code @NoArgsConstructor}: {@code Relationship} (nested in the Feign
++ * response {@code RelationshipResponseDTO}), {@code ResponseErrorDTO} (nested in the
++ * same response's errorDetails), {@code Agreement}, and {@code GetAgreementResponseDto}
++ * (the {@code CisAgreementClient.getAgreements()} return type).
++ */
++@JsonTest
++class JacksonDeserializationRegressionTest {
++
++    @SpringBootConfiguration
++    static class Cfg {
++    }
++
++    @Autowired
++    private JsonMapper mapper;
++
++    @Test
++    void deserializesRelationshipResponseWithNestedRelationshipAndErrorDetails() {
++        String json = """
++            {
++              "relationship": {
++                "relationships": [
++                  {
++                    "relationshipType": "OWNER",
++                    "relationshipTypeReverse": "OWNED",
++                    "relationshipCustomerEnd": 222,
++                    "relationshipCustomerBegin": 111,
++                    "relationshipBeginDate": "2020-01-01",
++                    "relationshipEndDate": "2025-12-31"
++                  }
++                ]
++              },
++              "errorDetails": [
++                { "errorCode": "E1", "message": "boom" }
++              ],
++              "correlationId": "abc-123"
++            }
++            """;
++
++        RelationshipResponseDTO dto = mapper.readValue(json, RelationshipResponseDTO.class);
++
++        assertThat(dto.getCorrelationId()).isEqualTo("abc-123");
++        assertThat(dto.getRelationship().getRelationships()).hasSize(1);
++        var rel = dto.getRelationship().getRelationships().get(0);
++        assertThat(rel.getRelationshipType()).isEqualTo("OWNER");
++        assertThat(rel.getRelationshipCustomerBegin()).isEqualTo(111L);
++        // field NOT covered by the hand-written constructor - proves no-arg + setter path is used
++        assertThat(rel.getRelationshipBeginDate()).isNotNull();
++        assertThat(dto.getErrorDetails()).hasSize(1);
++        assertThat(dto.getErrorDetails().get(0).getErrorCode()).isEqualTo("E1");
++    }
++
++    @Test
++    void deserializesAgreement() {
++        String json = """
++            {
++              "channel": "WEB",
++              "agreementId": "A1",
++              "agreementAnswer": true,
++              "agreementVersion": "v2",
++              "agreementDateFrom": "2024-01-01",
++              "agreementDateTo": "2025-01-01"
++            }
++            """;
++
++        Agreement agreement = mapper.readValue(json, Agreement.class);
++
++        assertThat(agreement.getAgreementId()).isEqualTo("A1");
++        assertThat(agreement.isAgreementAnswer()).isTrue();
++        // field NOT in the partial 3-arg constructor - proves no-arg + setter path
++        assertThat(agreement.getChannel()).isEqualTo("WEB");
++    }
++
++    @Test
++    void deserializesGetAgreementResponse() {
++        String json = """
++            {
++              "correlationId": "corr-1",
++              "agreements": [
++                { "agreementId": "A1", "agreementValue": "Y", "agreementVersion": "v1" }
++              ],
++              "errorDetails": []
++            }
++            """;
++
++        GetAgreementResponseDto dto = mapper.readValue(json, GetAgreementResponseDto.class);
++
++        assertThat(dto.getCorrelationId()).isEqualTo("corr-1");
++        assertThat(dto.getAgreements()).hasSize(1);
++        assertThat(dto.getAgreements().get(0).getAgreementId()).isEqualTo("A1");
++    }
++
++    @Test
++    void deserializesEmptyObjectsForAllFixedTargets() {
++        // "{}" is a clean creator-existence probe: without a usable creator the real
++        // Boot 4 mapper throws even for an empty object. These must all succeed.
++        assertThatCode(() -> mapper.readValue("{}", RelationshipResponseDTO.class)).doesNotThrowAnyException();
++        assertThatCode(() -> mapper.readValue("{}", Agreement.class)).doesNotThrowAnyException();
++        assertThatCode(() -> mapper.readValue("{}", GetAgreementResponseDto.class)).doesNotThrowAnyException();
++    }
++}
