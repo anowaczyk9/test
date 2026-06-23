@@ -1,20 +1,19 @@
-Akceptuję Path B mirror prod-wzorca (loyalty-program). Wykonaj zmiany w pom, ale przed mergem trzymają dwie bramki: checksum na naszej bazie + potwierdzenie licencji (to druga robię równolegle).
+Znaleźliśmy regresję deserializacji po migracji na Jackson 3 (Boot 4): klasa lombokowa @Data z polami final (brak konstruktora bezargumentowego) rzuca przy deserializacji "InvalidDefinitionException: Cannot construct instance ... no Creators, like default constructor, exist". Przyczyna: Jackson 3 usunął AUTO_DETECT_CREATORS i wyłączył ALLOW_FINAL_FIELDS_AS_MUTATORS, a use-jackson2-defaults NIE obejmuje detekcji konstruktora. Chcę pełny blast radius + trwały test. NIC nie zmieniaj poza dodaniem testu — fix wybiorę po wynikach.
 
-Zmiany w pom (mirror wzorca):
-1. spring-boot-liquibase (test, L361-362) → pełny spring-boot-starter-liquibase, default scope.
-2. liquibase-core: usuń <version>4.31.1</version> (L278) → z BOM 5.0.1. Zostaw deklarację dla exclusions; gate rozstrzygnie, czy zostają.
-3. depMgmt piny: commons-text:1.14.0 + commons-io:2.20.0 (jak we wzorcu, pod liquibase-core 5.0.1).
-(Spring Boot zostaje na razie 4.0.6 — bump do 4.1.0 to OSOBNA decyzja, NIE rób go w tym samym kroku.)
+ETAP 1 — polowanie statyczne (tylko raport, zero zmian w klasach):
+Wylistuj wszystkie klasy pasujące do predykatu ryzyka = deserializowane przez mapper webowy ORAZ bez konstruktora bezargumentowego ORAZ bez jawnego @JsonCreator/@ConstructorProperties. Konkretnie znajdź:
+- @Value
+- @Data na klasach z polami final lub @NonNull (te bez no-arg ctora)
+- @Builder/@SuperBuilder bez @Jacksonized
+- @AllArgsConstructor bez @NoArgsConstructor
+- ręczne klasy z jednym nie-domyślnym konstruktorem bez @JsonCreator
+Dla każdej trafionej klasy podaj file:line i gdzie jest deserializowana: @RequestBody, parsowanie odpowiedzi zewnętrznego API (RestClient/WebClient/Feign), payload konsumenta kolejki (MORS/RabbitMQ), albo readValue/convertValue. Klasy, których nikt nie deserializuje, oznacz jako "niskie ryzyko" osobno.
+Sprawdź też osobno: czy gdziekolwiek czytamy Page<T> z zewnętrznego serwisu (Spring Data PageModule w Boot 4 nie ma deserializera dla Page).
 
-Walidacja:
-A. Pełny gate: mvn -B "-Dspring.profiles.active=test" "-Djasypt.encryptor.password=dummy" package. Liczba testów + BUILD SUCCESS. Pokaż, czy enforcer convergence przeszedł po depMgmt pinach.
-B. TEETH-CHECK: 1234.50→1234.5 w infakt fixturze → InFaktCustomerBigDecimalContractIT RED, przywróć.
-C. DOWÓD RUNTIME + CHECKSUM naraz (kluczowe): najpierw potwierdź, że dev-DB ma realną historię — odpytaj DATABASECHANGELOG, czy są wiersze zaaplikowane wcześniej przez Liquibase 4.x (stare dateexecuted). Jeśli tak: zbuduj jar, odpal na runtime classpath (java -jar, profil dev) przeciw tej dev-DB. Pokaż log startu:
-   - Liquibase MUSI się teraz odezwać (czyta changelog) = autoconfig wrócił.
-   - I MUSI zwalidować istniejące changeSety BEZ "checksum mismatch"/"validation failed" = checksumy przeżyły skok 4.31.1→5.0.1 na NASZEJ historii.
-   Jeśli rzuca checksum mismatch → STOP, pokaż dokładnie które changeSety i błąd (może wymagać clearCheckSums albo obsługi wersjonowania checksumów). Jeśli dev-DB NIE ma historii 4.x (świeża) → ten test jest nieważny, zgłoś to — potrzebujemy bazy z realną historią (staging/UAT).
-D. Smoke H2 jak we wzorcu.
+ETAP 2 — dług dowodowy (czy build w ogóle ma nazwy parametrów):
+Potwierdź, czy kompilacja idzie z flagą -parameters (parent Boota zwykle to włącza). Jeśli NIE — to osobny, większy problem: każda deserializacja po konstruktorze jest zagrożona. Pokaż konfigurację maven-compiler-plugin.
 
-STOP, pokaż: diff pom, wynik gate (+ status convergence), teeth-check RED, log startu z fazą Liquibase i wynikiem walidacji checksumów, stan DATABASECHANGELOG.
+ETAP 3 — trwały test (to jedyna zmiana, jaką wykonujesz):
+Dodaj kontraktowy test deserializacji round-trip przez PRAWDZIWY mapper Jacksona 3 (@Autowired JsonMapper z kontekstu, nie ręcznie budowany), który dla każdej klasy z listy ETAPU 1 robi serialize→deserialize i asercję, że deserializacja się udaje. Jeśli da się — sterowany skanowaniem pakietów DTO, nie ręczną listą. Odpal go i pokaż, które klasy lecą RED (to potwierdza realny blast radius empirycznie, nie tylko statycznie).
 
-Nie pushuj, nie merguj. Miejsce commita (ten branch vs osobny MR) i bramka licencyjna — decyzja po wynikach.
+STOP, pokaż: listę z ETAPU 1 (z file:line i ścieżką deserializacji), status -parameters z ETAPU 2, wynik testu z ETAPU 3 (które klasy RED). NIE dodawaj jeszcze żadnego fixa (ani globalnego constructor-detector, ani @JsonCreator) — to decyzja po zobaczeniu pełnego zasięgu. Nie pushuj.
