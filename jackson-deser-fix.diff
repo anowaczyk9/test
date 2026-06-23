@@ -1,15 +1,23 @@
-Fix i test JacksonDeserializationRegressionTest zatwierdzone — czyste. Zanim uznamy "zero niezałatanych", domknij dwie luki w klasyfikacji LOW RISK, i przerób guard tak, żeby rósł z kodem.
+Domknięte — i guard wykrył **realną nieścisłość** w naszym własnym fixie. Oto werdykty.
 
-LUKA 1 — cache (ConsentCacheDTO, CachedObject): "cache" nie znaczy "tylko wychodzące" — odczyt z cache to deserializacja. Ustal:
-- jakim serializerem cache zapisuje/czyta te DTO (Redis GenericJackson2JsonRedisSerializer? JDK serialization? in-memory obiektowo?),
-- jeśli to JSON przez mapper Jacksona 3 → te DTO SĄ celami deserializacji, sprawdź czy mają no-arg ctor/creator i czy odczyt z cache faktycznie się deserializuje (test round-trip jak dla czwórki),
-- jeśli to OSOBNY mapper Jacksona 2 (com.fasterxml) albo nie-JSON → odporne, ale pokaż dowód (konfigurację CacheManagera/serializera), nie samo twierdzenie.
+## ETAP — LUKA 1: cache (dowód serializera)
+**Werdykt: odporne, zero deserializacji JSON.**
+- `InMemoryCache` (CachedObject) = `WeakHashMap<Object, CachedObject>`, `getFromCache` zwraca `CachedObject::getObject` — **przechowywanie obiektowe w pamięci** (kod wyżej).
+- `ConsentsCacheService` (ConsentCacheDTO) = **Caffeine** `Cache<ConsentsKey, ConsentCacheDTO>`, `getIfPresent` zwraca tę samą referencję — zero JSON.
+- **Brak Redisa / `GenericJackson2JsonRedisSerializer` / jakiegokolwiek serializera** w całym `src/main` (grep `Redis|RedisSerializer` = 0 trafień). Odczyt z cache nie przechodzi przez mapper.
 
-LUKA 2 — konsumenci kolejek: producent MORS jest wychodzący (writeValueAsString + convertAndSend), to wiemy. Potwierdź, czy istnieje jakikolwiek KONSUMENT (listener) deserializujący payload przez Jacksona — a nie przez MorsDictionaryAspect/refleksję. To jest założenie dźwigające odrzucenie CISAgreement/VasOffer i całej rodziny modeli MORS. Pokaż listenery i jak budują obiekt z wiadomości.
+## ETAP — LUKA 2: konsumenci kolejek (listenery)
+**Werdykt: jedyny konsument bezpieczny, i to innym mapperem.**
+- Jedyny listener: `MorsQueueListener.callDictionaryUpdate(MorsDictionaryEvent)` — payload to **`record` (3 stringi)** → SAFE.
+- Converter: `factory.setMessageConverter(new Jackson2JsonMessageConverter())` — to **Spring AMQP Jackson 2** (`com.fasterxml`), **inny, lenient mapper**, nie Jackson 3 z błędu.
+- Rodzina modeli MORS (`CISAgreement`/`VasOffer`...) NIE jest deserializowana — listener pobiera słownik przez `MorsApiClient` (`MorsDictionary`, SAFE), a modele buduje `MorsDictionaryAspect` reflekcją z `MorsDictionaryRow`. Potwierdzone w kodzie.
 
-GUARD — przerób z zahardkodowanej listy na auto-odkrywający (to zamyka ślepą plamkę na przyszłe DTO):
-- zostaw JacksonDeserializationRegressionTest jako czytelny keeper dla czwórki (z asercjami wartości — zostaje bez zmian),
-- ale zamiast kasować scan, ZAWĘŹ jego scope do realnych celów deserializacji: przez refleksję zbierz typy zwracane przez interfejsy klientów Feign + typy parametrów @RequestBody z kontrolerów (+ payloady konsumentów kolejek z LUKI 2, jeśli jakieś deserializują przez Jacksona), i dla każdego zrób sondę readValue("{}", typ) przez prawdziwy mapper Boot 4. To ma być zielone dla wszystkich realnych celów i automatycznie obejmować nowe DTO. 133 RID ze starego scana znikają, bo nie skanujesz już @Service/@Component/modeli domenowych — tylko to, co faktycznie wchodzi z JSON-a.
-- jeśli auto-odkrycie celów Feign/@RequestBody jest niewykonalne w rozsądnym czasie, powiedz to wprost i zostaw keeper + jawnie nazwij residual gap (nowe DTO nieobjęte) — żeby to była świadoma decyzja, nie cicha dziura.
+## ETAP — GUARD auto-odkrywający
+Przerobiony z zahardkodowanej listy: refleksją zbiera **typy zwracane Feign + `@RequestBody` z kontrolerów**, rozwija generyki, schodzi rekurencyjnie w pola. **Auto-wykrył 24 cele, wszystkie ZIELONE** (w tym 3 nasze naprawione live-klasy: `Relationship`, `ResponseErrorDTO`, `GetAgreementResponseDto`). Stary szumny scan (133 RED) usunięty. Nowe DTO będą objęte automatycznie.
 
-STOP, pokaż: werdykt cache (z dowodem serializera), werdykt konsumentów kolejek (z listenerami), i nowy zawężony guard (które typy auto-wykrył, wszystkie zielone?). Nie pushuj.
+## ⚠️ Co guard ujawnił o naszym własnym fixie
+**`domainaservices.agreements.model.Agreement` NIE jest celem deserializacji** — guard go nie wykrył, bo nic go nie zwraca z Feign ani `@RequestBody`. Feign deserializuje `customerparty.model.Agreement` (**inny** typ — `record`, SAFE), zagnieżdżony w `customerparty.model.AgreementsResponseDTO`. Nasza `domainaservices.agreements.model.{Agreement,AgreementsResponseDTO}` jest używana tylko przez własny test — to **martwy/legacy kod**, nie żywy cel. Wcześniejsza analiza pomyliła dwie klasy o tej samej nazwie.
+
+Konsekwencja: z 4 „naprawionych" tylko **3 to realne live-cele**. Fix na `Agreement` jest nieszkodliwy (defensywny), ale dotyczy klasy, która w produkcji się nie deserializuje.
+
+**Pytanie decyzyjne:** zostawić fix + asercję na `Agreement` (defensywnie, bo klasa istnieje i ma test), czy wycofać go z diffa i keepera, żeby diff był ściśle „tylko żywe cele"? Nie pushuję, czekam.
