@@ -1,23 +1,9 @@
-Domknięte — i guard wykrył **realną nieścisłość** w naszym własnym fixie. Oto werdykty.
+Werdykty cache i kolejek przyjęte — dowody solidne (in-memory object stores + grep zero Redis; listener na record przez Jackson2JsonMessageConverter). Guard auto-odkrywający zostaje, świetna robota — to on wyłapał, że nasz fix pomylił dwie klasy o tej samej nazwie.
 
-## ETAP — LUKA 1: cache (dowód serializera)
-**Werdykt: odporne, zero deserializacji JSON.**
-- `InMemoryCache` (CachedObject) = `WeakHashMap<Object, CachedObject>`, `getFromCache` zwraca `CachedObject::getObject` — **przechowywanie obiektowe w pamięci** (kod wyżej).
-- `ConsentsCacheService` (ConsentCacheDTO) = **Caffeine** `Cache<ConsentsKey, ConsentCacheDTO>`, `getIfPresent` zwraca tę samą referencję — zero JSON.
-- **Brak Redisa / `GenericJackson2JsonRedisSerializer` / jakiegokolwiek serializera** w całym `src/main` (grep `Redis|RedisSerializer` = 0 trafień). Odczyt z cache nie przechodzi przez mapper.
+Decyzja co do Agreement: WYCOFAJ fix i asercję — diff ma być ściśle „żywe cele deserializacji" (3), nie defensywne dotknięcia martwego kodu.
 
-## ETAP — LUKA 2: konsumenci kolejek (listenery)
-**Werdykt: jedyny konsument bezpieczny, i to innym mapperem.**
-- Jedyny listener: `MorsQueueListener.callDictionaryUpdate(MorsDictionaryEvent)` — payload to **`record` (3 stringi)** → SAFE.
-- Converter: `factory.setMessageConverter(new Jackson2JsonMessageConverter())` — to **Spring AMQP Jackson 2** (`com.fasterxml`), **inny, lenient mapper**, nie Jackson 3 z błędu.
-- Rodzina modeli MORS (`CISAgreement`/`VasOffer`...) NIE jest deserializowana — listener pobiera słownik przez `MorsApiClient` (`MorsDictionary`, SAFE), a modele buduje `MorsDictionaryAspect` reflekcją z `MorsDictionaryRow`. Potwierdzone w kodzie.
-
-## ETAP — GUARD auto-odkrywający
-Przerobiony z zahardkodowanej listy: refleksją zbiera **typy zwracane Feign + `@RequestBody` z kontrolerów**, rozwija generyki, schodzi rekurencyjnie w pola. **Auto-wykrył 24 cele, wszystkie ZIELONE** (w tym 3 nasze naprawione live-klasy: `Relationship`, `ResponseErrorDTO`, `GetAgreementResponseDto`). Stary szumny scan (133 RED) usunięty. Nowe DTO będą objęte automatycznie.
-
-## ⚠️ Co guard ujawnił o naszym własnym fixie
-**`domainaservices.agreements.model.Agreement` NIE jest celem deserializacji** — guard go nie wykrył, bo nic go nie zwraca z Feign ani `@RequestBody`. Feign deserializuje `customerparty.model.Agreement` (**inny** typ — `record`, SAFE), zagnieżdżony w `customerparty.model.AgreementsResponseDTO`. Nasza `domainaservices.agreements.model.{Agreement,AgreementsResponseDTO}` jest używana tylko przez własny test — to **martwy/legacy kod**, nie żywy cel. Wcześniejsza analiza pomyliła dwie klasy o tej samej nazwie.
-
-Konsekwencja: z 4 „naprawionych" tylko **3 to realne live-cele**. Fix na `Agreement` jest nieszkodliwy (defensywny), ale dotyczy klasy, która w produkcji się nie deserializuje.
-
-**Pytanie decyzyjne:** zostawić fix + asercję na `Agreement` (defensywnie, bo klasa istnieje i ma test), czy wycofać go z diffa i keepera, żeby diff był ściśle „tylko żywe cele"? Nie pushuję, czekam.
+Wykonaj:
+1. Najpierw potwierdź, że nic w src/main nie konstruuje domainaservices.agreements.model.Agreement przez konstruktor bezargumentowy (pełny grep referencji, nie tylko cele deser). Jeśli używa go TYLKO test — czysto do wycofania. Jeśli coś w src/main na nim polega — STOP i pokaż, zanim tkniesz.
+2. Cofnij @NoArgsConstructor (+ import) z domainaservices.agreements.model.Agreement — wróć do stanu sprzed fixa.
+3. Usuń z JacksonDeserializationRegressionTest metodę deserializesAgreement (i Agreement z deserializesEmptyObjectsForAllFixedTargets, jeśli tam jest). Keeper zostaje na 3 realnych celach: Relationship, ResponseErrorDTO, GetAgreementResponseDto.
+4. Gate: potwierdź, że po wycofaniu wszystko dalej zielone (keeper + auto-guard 24 cele).
