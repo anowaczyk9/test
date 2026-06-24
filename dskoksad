@@ -1,9 +1,28 @@
-Werdykty cache i kolejek przyjęte — dowody solidne (in-memory object stores + grep zero Redis; listener na record przez Jackson2JsonMessageConverter). Guard auto-odkrywający zostaje, świetna robota — to on wyłapał, że nasz fix pomylił dwie klasy o tej samej nazwie.
+Wycofanie zakończone — **gate zielony**:
 
-Decyzja co do Agreement: WYCOFAJ fix i asercję — diff ma być ściśle „żywe cele deserializacji" (3), nie defensywne dotknięcia martwego kodu.
+- **Keeper** `JacksonDeserializationRegressionTest`: `Tests run: 3, Failures: 0` (Relationship + ResponseErrorDTO przez `RelationshipResponseDTO`, `GetAgreementResponseDto`, oraz probe `{}` na 3 celach). `Agreement` usunięty.
+- **Auto-guard** `FeignAndRequestBodyDeserializationGuardTest`: `Tests run: 1` — **24 auto-wykryte cele, RED: 0**.
+- **BUILD SUCCESS.**
 
-Wykonaj:
-1. Najpierw potwierdź, że nic w src/main nie konstruuje domainaservices.agreements.model.Agreement przez konstruktor bezargumentowy (pełny grep referencji, nie tylko cele deser). Jeśli używa go TYLKO test — czysto do wycofania. Jeśli coś w src/main na nim polega — STOP i pokaż, zanim tkniesz.
-2. Cofnij @NoArgsConstructor (+ import) z domainaservices.agreements.model.Agreement — wróć do stanu sprzed fixa.
-3. Usuń z JacksonDeserializationRegressionTest metodę deserializesAgreement (i Agreement z deserializesEmptyObjectsForAllFixedTargets, jeśli tam jest). Keeper zostaje na 3 realnych celach: Relationship, ResponseErrorDTO, GetAgreementResponseDto.
-4. Gate: potwierdź, że po wycofaniu wszystko dalej zielone (keeper + auto-guard 24 cele).
+## Podsumowanie wykonanych kroków
+
+**1. Potwierdzenie martwego kodu** — pełny grep referencji `domainaservices.agreements.model.Agreement`:
+- `src/main` **nie konstruuje** naszej `Agreement` przez konstruktor bezargumentowy. Trafienie `AgreementsSourceChoosingService:48 new Agreement(...)` to false-positive — używa `customerparty.model.Agreement` (record, import linia 13).
+- Naszą `Agreement` używają **tylko testy**, i to przez konstruktor cząstkowy 3-arg, nie bezargumentowy → czysto do wycofania.
+
+**2. Cofnięto fix** w `Agreement.java`: usunięto `@NoArgsConstructor` + `import lombok.NoArgsConstructor;` → powrót do `@Data @AllArgsConstructor`.
+
+**3. Wyczyszczono keeper**: usunięto metodę `deserializesAgreement()`, import `Agreement`, linię `Agreement.class` z `deserializesEmptyObjectsForAllFixedTargets`, zaktualizowano javadoc.
+
+**4. Gate zielony** (powyżej).
+
+## Finalny, czysty stan
+
+**Fix (3 żywe cele deserializacji)** — pozostają z `@NoArgsConstructor`:
+- `Relationship` (zagnieżdżony w `RelationshipResponseDTO`)
+- `ResponseErrorDTO` (zagnieżdżony w errorDetails)
+- `GetAgreementResponseDto` (return type `CisAgreementClient.getAgreements()`)
+
+**Guardy (2 testy)**: keeper z asercjami wartości + auto-odkrywający guard (24 cele, rośnie z kodem).
+
+Nic nie pushowane/commitowane. `jackson-deser-fix.diff` jest teraz nieaktualny — daj znać, jeśli mam go zregenerować.
