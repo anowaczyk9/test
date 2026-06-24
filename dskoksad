@@ -1,28 +1,226 @@
-Wycofanie zakończone — **gate zielony**:
+package pl.santander.vas.domainaservices;
 
-- **Keeper** `JacksonDeserializationRegressionTest`: `Tests run: 3, Failures: 0` (Relationship + ResponseErrorDTO przez `RelationshipResponseDTO`, `GetAgreementResponseDto`, oraz probe `{}` na 3 celach). `Agreement` usunięty.
-- **Auto-guard** `FeignAndRequestBodyDeserializationGuardTest`: `Tests run: 1` — **24 auto-wykryte cele, RED: 0**.
-- **BUILD SUCCESS.**
+import static org.assertj.core.api.Assertions.assertThat;
 
-## Podsumowanie wykonanych kroków
+import java.lang.reflect.Field;
+import java.lang.reflect.GenericArrayType;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.lang.reflect.WildcardType;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeMap;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.test.autoconfigure.json.JsonTest;
+import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RestController;
+import tools.jackson.databind.exc.InvalidDefinitionException;
+import tools.jackson.databind.json.JsonMapper;
 
-**1. Potwierdzenie martwego kodu** — pełny grep referencji `domainaservices.agreements.model.Agreement`:
-- `src/main` **nie konstruuje** naszej `Agreement` przez konstruktor bezargumentowy. Trafienie `AgreementsSourceChoosingService:48 new Agreement(...)` to false-positive — używa `customerparty.model.Agreement` (record, import linia 13).
-- Naszą `Agreement` używają **tylko testy**, i to przez konstruktor cząstkowy 3-arg, nie bezargumentowy → czysto do wycofania.
+/**
+ * Auto-discovering regression guard for the Jackson 3 "no Creators" deserialization break.
+ *
+ * <p>Instead of a hard-coded list, this test reflectively discovers the REAL JSON
+ * deserialization targets of the application and probes each one against the real
+ * Spring Boot 4 {@code JsonMapper} (via the {@code @JsonTest} slice). Discovery sources
+ * (all RUNTIME-retained annotations, so visible by reflection):
+ * <ul>
+ *   <li>return types of every {@code @FeignClient} interface method (Feign deserializes the response body), and</li>
+ *   <li>{@code @RequestBody} parameter types of every {@code @RestController}/{@code @Controller} handler (the incoming body is deserialized).</li>
+ * </ul>
+ * Generic wrappers ({@code ResponseEntity}, {@code List}, {@code Optional}, {@code Map}, arrays, ...)
+ * are unwrapped, and nested {@code pl.santander.vas} field types are followed recursively so nested
+ * DTOs (the original bug was a nested {@code Relationship}) are covered too.
+ *
+ * <p>NOTE on scope: Feign {@code @RequestBody} PARAMETERS are outgoing (serialized) and are
+ * intentionally NOT probed; only Feign method RETURN types are. Queue consumers in this app
+ * deserialize via Spring AMQP's {@code Jackson2JsonMessageConverter} (Jackson 2, a different
+ * mapper) into a record, so they are out of scope for this Jackson 3 guard.
+ *
+ * <p>The probe is {@code readValue("{}", type)} — a clean creator-existence check: a type with no
+ * usable creator throws the exact production {@code InvalidDefinitionException: ... no Creators}.
+ * Any new DTO added to a Feign return type or a controller {@code @RequestBody} is automatically
+ * covered with no edit to this test.
+ */
+@JsonTest
+class FeignAndRequestBodyDeserializationGuardTest {
 
-**2. Cofnięto fix** w `Agreement.java`: usunięto `@NoArgsConstructor` + `import lombok.NoArgsConstructor;` → powrót do `@Data @AllArgsConstructor`.
+    private static final String BASE_PACKAGE = "pl.santander.vas";
 
-**3. Wyczyszczono keeper**: usunięto metodę `deserializesAgreement()`, import `Agreement`, linię `Agreement.class` z `deserializesEmptyObjectsForAllFixedTargets`, zaktualizowano javadoc.
+    @SpringBootConfiguration
+    static class Cfg {
+    }
 
-**4. Gate zielony** (powyżej).
+    @Autowired
+    private JsonMapper mapper;
 
-## Finalny, czysty stan
+    @Test
+    void everyDiscoveredDeserializationTargetHasAUsableCreator() {
+        Set<Class<?>> targets = discoverDeserializationTargets();
+        assertThat(targets).as("should auto-discover deserialization targets").isNotEmpty();
 
-**Fix (3 żywe cele deserializacji)** — pozostają z `@NoArgsConstructor`:
-- `Relationship` (zagnieżdżony w `RelationshipResponseDTO`)
-- `ResponseErrorDTO` (zagnieżdżony w errorDetails)
-- `GetAgreementResponseDto` (return type `CisAgreementClient.getAgreements()`)
+        TreeMap<String, String> failures = new TreeMap<>();
+        List<String> probed = new ArrayList<>();
+        for (Class<?> type : targets) {
+            probed.add(type.getName());
+            try {
+                mapper.readValue("{}", type);
+            } catch (InvalidDefinitionException e) {
+                String m = e.getMessage() == null ? "" : e.getMessage();
+                if (m.contains("no Creators")) {
+                    failures.put(type.getName(), firstLine(m));
+                }
+                // other InvalidDefinition reasons (e.g. abstract member type) are not a creator break
+            } catch (Exception ignored) {
+                // value-level issues on "{}" are not a missing-creator problem
+            }
+        }
 
-**Guardy (2 testy)**: keeper z asercjami wartości + auto-odkrywający guard (24 cele, rośnie z kodem).
+        System.out.println("=== FEIGN + @RequestBody DESERIALIZATION GUARD ===");
+        System.out.println("auto-discovered targets: " + probed.size());
+        probed.stream().sorted().forEach(t -> System.out.println("  target -> " + t));
+        System.out.println("RED (no usable creator): " + failures.size());
+        failures.forEach((k, v) -> System.out.println("  RED -> " + k + " : " + v));
+        System.out.println("=== END GUARD ===");
 
-Nic nie pushowane/commitowane. `jackson-deser-fix.diff` jest teraz nieaktualny — daj znać, jeśli mam go zregenerować.
+        assertThat(failures)
+                .as("Jackson 3 deserialization targets lacking a usable creator (add @NoArgsConstructor / @JsonCreator / make it a record): %s", failures)
+                .isEmpty();
+    }
+
+    private Set<Class<?>> discoverDeserializationTargets() {
+        Set<Class<?>> seeds = new LinkedHashSet<>();
+
+        // Feign clients are interfaces; the default scanner skips interfaces, so accept
+        // any independent (top-level / static) interface that carries the annotation.
+        ClassPathScanningCandidateComponentProvider feignScanner =
+                new ClassPathScanningCandidateComponentProvider(false) {
+                    @Override
+                    protected boolean isCandidateComponent(
+                            org.springframework.beans.factory.annotation.AnnotatedBeanDefinition beanDefinition) {
+                        return beanDefinition.getMetadata().isIndependent();
+                    }
+                };
+        feignScanner.addIncludeFilter(new AnnotationTypeFilter(FeignClient.class));
+        for (var bd : feignScanner.findCandidateComponents(BASE_PACKAGE)) {
+            Class<?> client = load(bd.getBeanClassName());
+            if (client == null) {
+                continue;
+            }
+            for (Method m : client.getMethods()) {
+                collectClasses(m.getGenericReturnType(), seeds);
+            }
+        }
+
+        ClassPathScanningCandidateComponentProvider ctrlScanner =
+                new ClassPathScanningCandidateComponentProvider(false);
+        ctrlScanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+        ctrlScanner.addIncludeFilter(new AnnotationTypeFilter(Controller.class));
+        for (var bd : ctrlScanner.findCandidateComponents(BASE_PACKAGE)) {
+            Class<?> controller = load(bd.getBeanClassName());
+            if (controller == null) {
+                continue;
+            }
+            for (Method m : controller.getDeclaredMethods()) {
+                for (Parameter p : m.getParameters()) {
+                    if (p.isAnnotationPresent(RequestBody.class)) {
+                        collectClasses(p.getParameterizedType(), seeds);
+                    }
+                }
+            }
+        }
+
+        // BFS over nested fields so nested DTOs are covered too.
+        Set<Class<?>> visited = new LinkedHashSet<>();
+        Set<Class<?>> result = new LinkedHashSet<>();
+        Deque<Class<?>> queue = new ArrayDeque<>(seeds);
+        while (!queue.isEmpty()) {
+            Class<?> c = queue.poll();
+            if (!visited.add(c)) {
+                continue;
+            }
+            if (isProbeable(c)) {
+                result.add(c);
+            }
+            // follow nested pl.santander.vas field types (records included, to reach their components)
+            if (c.getName().startsWith(BASE_PACKAGE) && !c.isEnum()) {
+                for (Field f : c.getDeclaredFields()) {
+                    if (Modifier.isStatic(f.getModifiers())) {
+                        continue;
+                    }
+                    Set<Class<?>> nested = new LinkedHashSet<>();
+                    collectClasses(f.getGenericType(), nested);
+                    nested.forEach(queue::add);
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Extract every concrete pl.santander.vas class referenced by a (possibly generic) type. */
+    private void collectClasses(Type type, Set<Class<?>> out) {
+        switch (type) {
+            case Class<?> c -> {
+                if (c.isArray()) {
+                    collectClasses(c.getComponentType(), out);
+                } else if (c.getName().startsWith(BASE_PACKAGE)) {
+                    out.add(c);
+                }
+            }
+            case ParameterizedType pt -> {
+                // do NOT add the raw container (List/ResponseEntity/Map/...) - only its pl.santander.vas args
+                for (Type arg : pt.getActualTypeArguments()) {
+                    collectClasses(arg, out);
+                }
+            }
+            case GenericArrayType gat -> collectClasses(gat.getGenericComponentType(), out);
+            case WildcardType wt -> {
+                for (Type b : wt.getUpperBounds()) {
+                    collectClasses(b, out);
+                }
+            }
+            default -> {
+                // TypeVariable etc. - nothing concrete to probe
+            }
+        }
+    }
+
+    private boolean isProbeable(Class<?> c) {
+        return c.getName().startsWith(BASE_PACKAGE)
+                && !c.isInterface()
+                && !c.isEnum()
+                && !c.isAnnotation()
+                && !c.isArray()
+                && !c.isRecord()
+                && !Modifier.isAbstract(c.getModifiers());
+    }
+
+    private Class<?> load(String name) {
+        if (name == null) {
+            return null;
+        }
+        try {
+            return Class.forName(name, false, getClass().getClassLoader());
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static String firstLine(String m) {
+        int i = m.indexOf('\n');
+        return i > 0 ? m.substring(0, i) : m;
+    }
+}
